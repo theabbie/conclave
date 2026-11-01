@@ -1,4 +1,18 @@
 import { HttpError, readJson } from "./releases";
+import {
+  emptyRecordIds,
+  type BoardDelta,
+  type BoardLoadResult,
+  type BoardRecordIds,
+} from "../src/board/persistence";
+import {
+  parseBoardState,
+  statuses,
+  type BoardState,
+  type Ticket,
+  type TicketComment,
+} from "../src/board/store";
+import type { DeploymentTask } from "../src/domain/api-units";
 
 export interface NotionEnvironment {
   NOTION_CLIENT_ID?: string;
@@ -238,26 +252,45 @@ async function notion(
   path: string,
   accessToken: string,
   init: RequestInit = {},
+  retryPost = false,
 ): Promise<JsonObject> {
-  const response = await fetch(`${notionApi}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Notion-Version": notionVersion,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-  const value: unknown = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  const method = init.method ?? "GET";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const response = await fetch(`${notionApi}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Notion-Version": notionVersion,
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    const value: unknown = await response.json().catch(() => ({}));
+    if (response.ok) {
+      if (!object(value))
+        throw new HttpError(502, "Invalid response from Notion");
+      return value;
+    }
+    const retryable =
+      response.status === 429 ||
+      response.status === 529 ||
+      ((method !== "POST" || retryPost) &&
+        [500, 502, 503, 504].includes(response.status));
+    if (retryable && attempt < 4) {
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      const delay = Number.isFinite(retryAfter)
+        ? Math.max(250, retryAfter * 1000)
+        : Math.min(4000, 250 * 2 ** attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
     const message =
       object(value) && typeof value.message === "string"
         ? value.message
         : `Notion request failed with ${response.status}`;
     throw new HttpError(response.status === 401 ? 401 : 502, message);
   }
-  if (!object(value)) throw new HttpError(502, "Invalid response from Notion");
-  return value;
+  throw new HttpError(502, "Notion request failed");
 }
 
 function pageTitle(page: JsonObject): string {
@@ -291,6 +324,245 @@ function richText(value: string): JsonObject[] {
 
 function emptyBoard(): JsonObject {
   return { tickets: [], comments: [], deployments: [] };
+}
+
+const entityKinds = ["ticket", "comment", "deployment"] as const;
+type EntityKind = (typeof entityKinds)[number];
+
+function normalizedSchema(): JsonObject {
+  return {
+    Kind: {
+      select: {
+        options: entityKinds.map((name) => ({ name })),
+      },
+    },
+    "Entity ID": { rich_text: {} },
+    "Ticket ID": { rich_text: {} },
+    "Parent ID": { rich_text: {} },
+    Status: {
+      select: {
+        options: [...statuses, "queued", "succeeded", "failed"].map((name) => ({
+          name,
+        })),
+      },
+    },
+    Created: { date: {} },
+    Attention: { checkbox: {} },
+    Payload: { rich_text: {} },
+  };
+}
+
+function textValue(value: string): JsonObject {
+  return { rich_text: richText(value) };
+}
+
+function titleValue(value: string): JsonObject {
+  return {
+    title: [
+      {
+        type: "text",
+        text: { content: value.slice(0, 2000) || "Untitled" },
+      },
+    ],
+  };
+}
+
+function entityProperties(
+  kind: EntityKind,
+  entity: Ticket | TicketComment | DeploymentTask,
+): JsonObject {
+  const ticketId =
+    kind === "ticket" ? entity.id : (entity as TicketComment).ticketId;
+  const ticket = kind === "ticket" ? (entity as Ticket) : undefined;
+  const comment = kind === "comment" ? (entity as TicketComment) : undefined;
+  const deployment =
+    kind === "deployment" ? (entity as DeploymentTask) : undefined;
+  const name = ticket
+    ? ticket.title
+    : comment
+      ? comment.message
+      : `Deployment ${deployment!.unitId}`;
+  const status = ticket?.status ?? deployment?.status;
+  const createdAt =
+    ticket?.createdAt ??
+    comment?.createdAt ??
+    deployment?.createdAt ??
+    Date.now();
+  return {
+    Name: titleValue(name),
+    Kind: { select: { name: kind } },
+    "Entity ID": textValue(entity.id),
+    "Ticket ID": textValue(ticketId),
+    "Parent ID": textValue(ticket?.parentId ?? ""),
+    Status: status ? { select: { name: status } } : { select: null },
+    Created: { date: { start: new Date(createdAt).toISOString() } },
+    Attention: { checkbox: comment?.attention ?? false },
+    Payload: textValue(JSON.stringify(entity)),
+  };
+}
+
+function propertyText(page: JsonObject, name: string): string {
+  if (!object(page.properties)) return "";
+  const property = page.properties[name];
+  if (!object(property)) return "";
+  const values = Array.isArray(property.rich_text)
+    ? property.rich_text
+    : Array.isArray(property.title)
+      ? property.title
+      : [];
+  return values
+    .map((item) =>
+      object(item) && typeof item.plain_text === "string"
+        ? item.plain_text
+        : "",
+    )
+    .join("");
+}
+
+function propertySelect(page: JsonObject, name: string): string {
+  if (!object(page.properties)) return "";
+  const property = page.properties[name];
+  if (!object(property) || !object(property.select)) return "";
+  return typeof property.select.name === "string" ? property.select.name : "";
+}
+
+async function recordReference(
+  pageId: string,
+  dataSourceId: string,
+  env: NotionEnvironment,
+): Promise<string> {
+  configured(env);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(env.NOTION_SESSION_PRIVATE_KEY),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(`${dataSourceId}:${pageId}`),
+  );
+  return `${pageId}.${base64Url(signature)}`;
+}
+
+async function pageIdFromReference(
+  reference: string,
+  dataSourceId: string,
+  env: NotionEnvironment,
+): Promise<string> {
+  configured(env);
+  const separator = reference.lastIndexOf(".");
+  if (separator < 1) throw new HttpError(400, "Invalid board record");
+  const pageId = reference.slice(0, separator);
+  const signature = reference.slice(separator + 1);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(env.NOTION_SESSION_PRIVATE_KEY),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    fromBase64Url(signature),
+    encoder.encode(`${dataSourceId}:${pageId}`),
+  );
+  if (!valid) throw new HttpError(400, "Invalid board record");
+  return pageId;
+}
+
+async function ensureNormalizedSchema(
+  dataSourceId: string,
+  accessToken: string,
+): Promise<void> {
+  const source = await notion(`/data_sources/${dataSourceId}`, accessToken);
+  if (object(source.properties) && object(source.properties.Kind)) return;
+  await notion(`/data_sources/${dataSourceId}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: normalizedSchema() }),
+  });
+}
+
+async function queryAllPages(
+  dataSourceId: string,
+  accessToken: string,
+): Promise<JsonObject[]> {
+  const pages: JsonObject[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await notion(
+      `/data_sources/${dataSourceId}/query`,
+      accessToken,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {}),
+        }),
+      },
+      true,
+    );
+    const results = Array.isArray(result.results) ? result.results : [];
+    pages.push(...results.filter((page): page is JsonObject => object(page)));
+    cursor =
+      result.has_more === true && typeof result.next_cursor === "string"
+        ? result.next_cursor
+        : undefined;
+  } while (cursor);
+  return pages;
+}
+
+async function loadNormalizedBoard(
+  dataSourceId: string,
+  accessToken: string,
+  env: NotionEnvironment,
+): Promise<
+  BoardLoadResult & { legacy?: { page: JsonObject; board: BoardState } }
+> {
+  const pages = await queryAllPages(dataSourceId, accessToken);
+  const records = emptyRecordIds();
+  const tickets: Ticket[] = [];
+  const comments: TicketComment[] = [];
+  const deployments: DeploymentTask[] = [];
+  let legacy: { page: JsonObject; board: BoardState } | undefined;
+  for (const page of pages) {
+    if (typeof page.id !== "string") continue;
+    const kind = propertySelect(page, "Kind");
+    if (!entityKinds.includes(kind as EntityKind)) {
+      if (propertyText(page, "State")) {
+        legacy = {
+          page,
+          board: parseBoardState(boardProperty(page)),
+        };
+      }
+      continue;
+    }
+    const payload = propertyText(page, "Payload");
+    let entity: unknown;
+    try {
+      entity = JSON.parse(payload);
+    } catch {
+      throw new HttpError(502, "Notion board record is invalid");
+    }
+    if (!object(entity) || typeof entity.id !== "string")
+      throw new HttpError(502, "Notion board record is malformed");
+    const reference = await recordReference(page.id, dataSourceId, env);
+    if (kind === "ticket") {
+      tickets.push(entity as unknown as Ticket);
+      records.tickets[entity.id] = reference;
+    } else if (kind === "comment") {
+      comments.push(entity as unknown as TicketComment);
+      records.comments[entity.id] = reference;
+    } else {
+      deployments.push(entity as unknown as DeploymentTask);
+      records.deployments[entity.id] = reference;
+    }
+  }
+  const board = parseBoardState({ tickets, comments, deployments });
+  return { board, records, ...(legacy ? { legacy } : {}) };
 }
 
 function boardProperty(page: JsonObject): unknown {
@@ -393,7 +665,7 @@ export async function notionStatus(
   const value = await session(request, env);
   return Response.json({
     connected: true,
-    initialized: Boolean(value.dataSourceId && value.boardPageId),
+    initialized: Boolean(value.dataSourceId),
     workspaceName: value.workspaceName,
     workspaceIcon: value.workspaceIcon ?? null,
     boardUrl: value.boardUrl ?? null,
@@ -405,14 +677,19 @@ export async function notionPages(
   env: NotionEnvironment,
 ): Promise<Response> {
   const value = await session(request, env);
-  const result = await notion("/search", value.accessToken, {
-    method: "POST",
-    body: JSON.stringify({
-      filter: { property: "object", value: "page" },
-      sort: { direction: "descending", timestamp: "last_edited_time" },
-      page_size: 100,
-    }),
-  });
+  const result = await notion(
+    "/search",
+    value.accessToken,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        filter: { property: "object", value: "page" },
+        sort: { direction: "descending", timestamp: "last_edited_time" },
+        page_size: 100,
+      }),
+    },
+    true,
+  );
   const results = Array.isArray(result.results) ? result.results : [];
   return Response.json({
     pages: results
@@ -448,8 +725,7 @@ export async function notionSetup(
       initial_data_source: {
         properties: {
           Name: { title: {} },
-          State: { rich_text: {} },
-          Revision: { number: {} },
+          ...normalizedSchema(),
         },
       },
     }),
@@ -472,20 +748,6 @@ export async function notionSetup(
   );
   if (!object(firstSource) || typeof firstSource.id !== "string")
     throw new HttpError(502, "Notion did not create a board data source");
-  const initial = JSON.stringify(emptyBoard());
-  const boardPage = await notion("/pages", current.accessToken, {
-    method: "POST",
-    body: JSON.stringify({
-      parent: { type: "data_source_id", data_source_id: firstSource.id },
-      properties: {
-        Name: { title: [{ type: "text", text: { content: "Board" } }] },
-        State: { rich_text: richText(initial) },
-        Revision: { number: 0 },
-      },
-    }),
-  });
-  if (typeof boardPage.id !== "string")
-    throw new HttpError(502, "Notion did not create a board page");
   const updated = await encryptToken(
     {
       kind: "notion_session",
@@ -497,12 +759,214 @@ export async function notionSetup(
         ? { workspaceIcon: current.workspaceIcon }
         : {}),
       dataSourceId: firstSource.id,
-      boardPageId: boardPage.id,
-      ...(typeof boardPage.url === "string" ? { boardUrl: boardPage.url } : {}),
+      ...(typeof database.url === "string" ? { boardUrl: database.url } : {}),
     },
     env,
   );
   return Response.json({ token: updated, board: emptyBoard() });
+}
+
+function deltaGroup(value: unknown): value is {
+  upsert: JsonObject[];
+  remove: { id: string; recordId: string }[];
+} {
+  return (
+    object(value) &&
+    Array.isArray(value.upsert) &&
+    value.upsert.every(
+      (item) => object(item) && typeof item.id === "string" && item.id,
+    ) &&
+    Array.isArray(value.remove) &&
+    value.remove.every(
+      (item) =>
+        object(item) &&
+        typeof item.id === "string" &&
+        typeof item.recordId === "string",
+    )
+  );
+}
+
+function parseDelta(value: unknown): BoardDelta {
+  if (
+    !object(value) ||
+    !deltaGroup(value.tickets) ||
+    !deltaGroup(value.comments) ||
+    !deltaGroup(value.deployments) ||
+    !object(value.records) ||
+    !object(value.records.tickets) ||
+    !object(value.records.comments) ||
+    !object(value.records.deployments)
+  )
+    throw new HttpError(400, "Invalid board changes");
+  const count =
+    value.tickets.upsert.length +
+    value.tickets.remove.length +
+    value.comments.upsert.length +
+    value.comments.remove.length +
+    value.deployments.upsert.length +
+    value.deployments.remove.length;
+  if (count > 500) throw new HttpError(413, "Too many board changes");
+  return value as unknown as BoardDelta;
+}
+
+async function findEntityPage(
+  dataSourceId: string,
+  entityId: string,
+  accessToken: string,
+): Promise<JsonObject | undefined> {
+  const result = await notion(
+    `/data_sources/${dataSourceId}/query`,
+    accessToken,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        page_size: 2,
+        filter: {
+          property: "Entity ID",
+          rich_text: { equals: entityId },
+        },
+      }),
+    },
+    true,
+  );
+  const results = Array.isArray(result.results) ? result.results : [];
+  return results.find((item): item is JsonObject => object(item));
+}
+
+async function createEntity(
+  kind: EntityKind,
+  entity: Ticket | TicketComment | DeploymentTask,
+  dataSourceId: string,
+  accessToken: string,
+): Promise<JsonObject> {
+  try {
+    return await notion("/pages", accessToken, {
+      method: "POST",
+      body: JSON.stringify({
+        parent: { type: "data_source_id", data_source_id: dataSourceId },
+        properties: entityProperties(kind, entity),
+      }),
+    });
+  } catch (error) {
+    const existing = await findEntityPage(dataSourceId, entity.id, accessToken);
+    if (existing) return existing;
+    throw error;
+  }
+}
+
+async function saveEntity(
+  kind: EntityKind,
+  entity: Ticket | TicketComment | DeploymentTask,
+  records: BoardRecordIds,
+  dataSourceId: string,
+  accessToken: string,
+  env: NotionEnvironment,
+): Promise<void> {
+  const collection =
+    kind === "ticket"
+      ? records.tickets
+      : kind === "comment"
+        ? records.comments
+        : records.deployments;
+  const reference = collection[entity.id];
+  let page: JsonObject;
+  if (reference) {
+    const pageId = await pageIdFromReference(reference, dataSourceId, env);
+    page = await notion(`/pages/${pageId}`, accessToken, {
+      method: "PATCH",
+      body: JSON.stringify({ properties: entityProperties(kind, entity) }),
+    });
+  } else {
+    page = await createEntity(kind, entity, dataSourceId, accessToken);
+  }
+  if (typeof page.id !== "string")
+    throw new HttpError(502, "Notion did not return a board record");
+  collection[entity.id] = await recordReference(page.id, dataSourceId, env);
+}
+
+async function removeEntity(
+  id: string,
+  reference: string,
+  records: Record<string, string>,
+  dataSourceId: string,
+  accessToken: string,
+  env: NotionEnvironment,
+): Promise<void> {
+  const pageId = await pageIdFromReference(reference, dataSourceId, env);
+  await notion(`/pages/${pageId}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ in_trash: true }),
+  });
+  delete records[id];
+}
+
+async function applyDelta(
+  delta: BoardDelta,
+  dataSourceId: string,
+  accessToken: string,
+  env: NotionEnvironment,
+): Promise<BoardRecordIds> {
+  const records = structuredClone(delta.records);
+  for (const item of delta.deployments.remove)
+    await removeEntity(
+      item.id,
+      item.recordId,
+      records.deployments,
+      dataSourceId,
+      accessToken,
+      env,
+    );
+  for (const item of delta.comments.remove)
+    await removeEntity(
+      item.id,
+      item.recordId,
+      records.comments,
+      dataSourceId,
+      accessToken,
+      env,
+    );
+  for (const item of delta.tickets.remove)
+    await removeEntity(
+      item.id,
+      item.recordId,
+      records.tickets,
+      dataSourceId,
+      accessToken,
+      env,
+    );
+  for (const ticket of delta.tickets.upsert)
+    await saveEntity("ticket", ticket, records, dataSourceId, accessToken, env);
+  for (const comment of delta.comments.upsert)
+    await saveEntity(
+      "comment",
+      comment,
+      records,
+      dataSourceId,
+      accessToken,
+      env,
+    );
+  for (const deployment of delta.deployments.upsert)
+    await saveEntity(
+      "deployment",
+      deployment,
+      records,
+      dataSourceId,
+      accessToken,
+      env,
+    );
+  return records;
+}
+
+function fullBoardDelta(
+  board: BoardState,
+  records: BoardRecordIds,
+): BoardDelta {
+  return {
+    tickets: { upsert: board.tickets, remove: [] },
+    comments: { upsert: board.comments, remove: [] },
+    deployments: { upsert: board.deployments ?? [], remove: [] },
+    records,
+  };
 }
 
 export async function notionReadBoard(
@@ -510,10 +974,27 @@ export async function notionReadBoard(
   env: NotionEnvironment,
 ): Promise<Response> {
   const value = await session(request, env);
-  if (!value.boardPageId)
+  if (!value.dataSourceId)
     throw new HttpError(409, "Notion board is not initialized");
-  const page = await notion(`/pages/${value.boardPageId}`, value.accessToken);
-  return Response.json({ board: boardProperty(page) });
+  await ensureNormalizedSchema(value.dataSourceId, value.accessToken);
+  const loaded = await loadNormalizedBoard(
+    value.dataSourceId,
+    value.accessToken,
+    env,
+  );
+  if (!loaded.legacy) return Response.json(loaded);
+  const records = await applyDelta(
+    fullBoardDelta(loaded.legacy.board, loaded.records),
+    value.dataSourceId,
+    value.accessToken,
+    env,
+  );
+  if (typeof loaded.legacy.page.id === "string")
+    await notion(`/pages/${loaded.legacy.page.id}`, value.accessToken, {
+      method: "PATCH",
+      body: JSON.stringify({ in_trash: true }),
+    });
+  return Response.json({ board: loaded.legacy.board, records });
 }
 
 export async function notionWriteBoard(
@@ -521,21 +1002,32 @@ export async function notionWriteBoard(
   env: NotionEnvironment,
 ): Promise<Response> {
   const value = await session(request, env);
-  if (!value.boardPageId)
+  if (!value.dataSourceId)
     throw new HttpError(409, "Notion board is not initialized");
-  const body = await readJson(request);
-  if (!object(body) || !object(body.board))
-    throw new HttpError(400, "Invalid board state");
-  const source = JSON.stringify(body.board);
-  await notion(`/pages/${value.boardPageId}`, value.accessToken, {
-    method: "PATCH",
-    body: JSON.stringify({
-      properties: {
-        State: { rich_text: richText(source) },
-        Revision: { number: Date.now() },
-      },
-      notifications: { mode: "silent" },
-    }),
-  });
-  return Response.json({ saved: true });
+  const delta = parseDelta(await readJson(request));
+  const records = await applyDelta(
+    delta,
+    value.dataSourceId,
+    value.accessToken,
+    env,
+  );
+  return Response.json({ records });
+}
+
+export async function notionClearBoard(
+  request: Request,
+  env: NotionEnvironment,
+): Promise<Response> {
+  const value = await session(request, env);
+  if (!value.dataSourceId)
+    throw new HttpError(409, "Notion board is not initialized");
+  const pages = await queryAllPages(value.dataSourceId, value.accessToken);
+  for (const page of pages) {
+    if (typeof page.id !== "string") continue;
+    await notion(`/pages/${page.id}`, value.accessToken, {
+      method: "PATCH",
+      body: JSON.stringify({ in_trash: true }),
+    });
+  }
+  return Response.json({ board: emptyBoard(), records: emptyRecordIds() });
 }

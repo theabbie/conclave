@@ -118,7 +118,9 @@ function Bootstrap() {
         return;
       }
       const board = await notion.loadBoard();
-      const next = new BoardStore(board, (state) => notion.saveBoard(state));
+      const next = new BoardStore(board, (previous, state) =>
+        notion.saveBoard(previous, state),
+      );
       next.subscribeErrors((failure) => setError(failure.message));
       setStore(next);
       setPhase("ready");

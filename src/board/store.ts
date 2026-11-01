@@ -61,7 +61,10 @@ export interface BoardState {
   deployments?: DeploymentTask[];
 }
 
-export type BoardSaver = (state: BoardState) => Promise<void>;
+export type BoardSaver = (
+  previous: BoardState,
+  next: BoardState,
+) => Promise<void>;
 
 function requiredText(value: string, name: string): string {
   if (typeof value !== "string" || !value.trim())
@@ -186,12 +189,14 @@ export class BoardStore {
   private eventListeners = new Set<(event: BoardEvent) => void>();
   private errorListeners = new Set<(error: Error) => void>();
   private saves = Promise.resolve();
+  private persistedState: BoardState;
 
   constructor(
     initialState: BoardState = { tickets: [], comments: [], deployments: [] },
     private save?: BoardSaver,
   ) {
     const state = parseBoardState(initialState);
+    this.persistedState = state;
     const externallyRunning = new Set(
       (state.deployments ?? [])
         .filter(
@@ -253,7 +258,10 @@ export class BoardStore {
 
   private persist(state: BoardState): void {
     if (!this.save) return;
-    const operation = this.saves.then(() => this.save?.(state));
+    const operation = this.saves.then(async () => {
+      await this.save?.(this.persistedState, state);
+      this.persistedState = state;
+    });
     this.saves = operation.catch((error: unknown) => {
       const failure = error instanceof Error ? error : new Error(String(error));
       this.errorListeners.forEach((listener) => listener(failure));

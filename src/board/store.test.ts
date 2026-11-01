@@ -5,7 +5,7 @@ function memoryPersistence() {
   let state: BoardState = { tickets: [], comments: [], deployments: [] };
   return {
     load: () => structuredClone(state),
-    save: async (next: BoardState) => {
+    save: async (_previous: BoardState, next: BoardState) => {
       state = structuredClone(next);
     },
   };
@@ -151,6 +151,22 @@ describe("BoardStore", () => {
     await board.whenSaved();
     expect(message).toBe("Notion unavailable");
     expect(board.listTickets()).toHaveLength(1);
+  });
+
+  it("reconciles the next save from the last successful persisted state", async () => {
+    const calls: { previous: BoardState; next: BoardState }[] = [];
+    let attempts = 0;
+    const board = new BoardStore(undefined, async (previous, next) => {
+      calls.push({ previous, next });
+      attempts++;
+      if (attempts === 1) throw new Error("Temporary failure");
+    });
+    const ticket = board.createTicket("Task", "");
+    board.moveTicket(ticket.id, "ready");
+    await board.whenSaved();
+    expect(calls).toHaveLength(2);
+    expect(calls[1].previous.tickets).toEqual([]);
+    expect(calls[1].next.tickets[0].status).toBe("ready");
   });
 
   it("rejects malformed hierarchy and invalid input without partial changes", () => {

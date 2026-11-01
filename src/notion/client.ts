@@ -1,4 +1,11 @@
 import type { BoardState } from "../board/store";
+import {
+  diffBoard,
+  emptyRecordIds,
+  type BoardLoadResult,
+  type BoardRecordIds,
+  type BoardSaveResult,
+} from "../board/persistence";
 
 export interface NotionStatus {
   connected: boolean;
@@ -17,6 +24,8 @@ export interface NotionPage {
 const sessionKey = "conclave.notion.session";
 
 export class NotionClient {
+  private records: BoardRecordIds = emptyRecordIds();
+
   constructor(
     private baseUrl = "https://conclave.abbie.workers.dev",
     private storage: Pick<
@@ -72,20 +81,23 @@ export class NotionClient {
       },
     );
     this.storage.setItem(sessionKey, result.token);
+    this.records = emptyRecordIds();
     return result.board;
   }
 
   async loadBoard(): Promise<BoardState> {
-    const result = await this.request<{ board: BoardState }>("/api/board");
+    const result = await this.request<BoardLoadResult>("/api/board");
+    this.records = result.records;
     return result.board;
   }
 
-  async saveBoard(board: BoardState): Promise<void> {
-    await this.request("/api/board", {
-      method: "PUT",
+  async saveBoard(previous: BoardState, next: BoardState): Promise<void> {
+    const result = await this.request<BoardSaveResult>("/api/board", {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ board }),
+      body: JSON.stringify(diffBoard(previous, next, this.records)),
     });
+    this.records = result.records;
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {

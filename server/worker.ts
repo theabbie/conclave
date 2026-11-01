@@ -10,6 +10,7 @@ import {
 import {
   authorizeNotionSession,
   notionCallback,
+  notionClearBoard,
   notionPages,
   notionReadBoard,
   notionSetup,
@@ -21,7 +22,7 @@ import {
 import { streamLlm } from "./llm";
 
 const allowedOrigin = "https://theabbie.github.io";
-const allowedMethods = ["GET", "HEAD", "POST", "PUT", "OPTIONS"];
+const allowedMethods = ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"];
 const allowedHeaders = ["authorization", "content-type"];
 
 function withCors(request: Request, response: Response): Response {
@@ -94,8 +95,10 @@ async function route(
     return notionSetup(request, env);
   if (path === "/api/board" && ["GET", "HEAD"].includes(request.method))
     return notionReadBoard(request, env);
-  if (path === "/api/board" && request.method === "PUT")
+  if (path === "/api/board" && request.method === "PATCH")
     return notionWriteBoard(request, env);
+  if (path === "/api/board" && request.method === "DELETE")
+    return notionClearBoard(request, env);
 
   if (path === "/api/source" || path.startsWith("/api/releases")) {
     try {
