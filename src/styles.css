@@ -376,7 +376,7 @@ select:focus-visible {
     background 120ms ease,
     border-color 120ms ease;
 }
-.cards.is-over {
+.column.is-over .cards {
   border-color: var(--outline);
   background: var(--accent-soft);
 }

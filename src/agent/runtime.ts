@@ -14,6 +14,7 @@ export type SubtaskStatus =
 
 export interface BoardAgentAdapter {
   listTickets(): unknown;
+  listSubtasks(parentId: string): unknown;
   readTicket(id: string): unknown;
   createSubtask(parentId: string, title: string, description: string): unknown;
   updateSubtask(id: string, status: SubtaskStatus, summary?: string): unknown;
@@ -92,6 +93,17 @@ export function createTicketAgent({
       execute: async (_, args) => {
         assertScope(args.id);
         return result(await board.readTicket(args.id));
+      },
+    }),
+    defineTool({
+      name: "list_subtasks",
+      label: "List subtasks",
+      description:
+        "List direct subtasks beneath a ticket, returning IDs, titles and statuses. Read individual results with read_ticket.",
+      parameters: Type.Object({ parentId: Type.String() }),
+      execute: async (_, args) => {
+        assertScope(args.parentId);
+        return result(await board.listSubtasks(args.parentId));
       },
     }),
     defineTool({
@@ -278,7 +290,7 @@ export function createTicketAgent({
     initialState: {
       model,
       tools,
-      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket, its data, comments, and deployments. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success. Do not claim work you have not performed. Finish with a concise result for user review.`,
+      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never ask the user for access to ticket or subtask records before trying list_subtasks and read_ticket. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket and a lightweight index of its direct subtasks. Fetch subtask details on demand with read_ticket. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success. Do not claim work you have not performed. Finish with a concise result for user review.`,
     },
     streamFn: createWebiomeTransport(settings),
     toolExecution: "sequential",

@@ -11,6 +11,7 @@
   ],
   "build": { "command": "node scripts/deploy/snapshot.mjs" },
   "version_metadata": { "binding": "VERSION" },
+  "services": [{ "binding": "WORKSPACE", "service": "conclave-workspace" }],
   "vars": {
     "CLOUDFLARE_ACCOUNT_ID": "e740966782f2431c7fa74738e754d871",
     "WORKER_NAME": "conclave-workspace",

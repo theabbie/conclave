@@ -56,9 +56,12 @@ function BoardColumn({
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: `column:${status}` });
   return (
-    <div ref={setNodeRef} className={`cards ${isOver ? "is-over" : ""}`}>
+    <section
+      ref={setNodeRef}
+      className={`column ${status} ${isOver ? "is-over" : ""}`}
+    >
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -226,6 +229,32 @@ export function App({
     }
   };
 
+  const settleInactiveSubtasks = (rootId: string) => {
+    const snapshot = store.getSnapshot();
+    const externallyActive = new Set(
+      (snapshot.deployments ?? [])
+        .filter(
+          (deployment) =>
+            deployment.status === "queued" ||
+            deployment.status === "in_progress",
+        )
+        .map((deployment) => deployment.ticketId),
+    );
+    for (const candidate of snapshot.tickets) {
+      if (
+        candidate.parentId &&
+        candidate.status === "in_progress" &&
+        store.isInScope(rootId, candidate.id) &&
+        !externallyActive.has(candidate.id)
+      )
+        store.updateSubtask(
+          candidate.id,
+          "review",
+          "The agent run ended without an active deployment. Review this subtask before continuing.",
+        );
+    }
+  };
+
   const start = async (target: Ticket, followUp?: string) => {
     if (activeRun.current) {
       setNotice("An agent is already working. Stop that run first.");
@@ -292,9 +321,11 @@ export function App({
       });
       setNotice("");
       const current = store.readTicket(target.id);
+      const subtasks = store.listSubtasks(target.id);
       await runtime.run(
         [
           `Current ticket context:\n${JSON.stringify(current, null, 2)}`,
+          `Direct subtask index:\n${JSON.stringify(subtasks, null, 2)}`,
           followUp
             ? `User follow-up:\n${followUp}`
             : "Assess and work on this ticket.",
@@ -310,6 +341,7 @@ export function App({
           .join("\n");
         if (summary) store.addComment(target.id, summary, "agent");
       }
+      settleInactiveSubtasks(target.id);
       const finalStatus = store.readTicket(target.id).status;
       if (stopped) store.moveTicket(target.id, "ready", "agent");
       else if (finalStatus === "ready" || finalStatus === "in_progress")
@@ -328,6 +360,7 @@ export function App({
           ? error.message
           : String(error);
       attempt(() => {
+        settleInactiveSubtasks(target.id);
         store.moveTicket(target.id, stopped ? "ready" : "review", "agent");
         store.addComment(target.id, message, "system");
       });
@@ -463,7 +496,7 @@ export function App({
                   (item) => item.status === column.id,
                 );
                 return (
-                  <section className={`column ${column.id}`} key={column.id}>
+                  <BoardColumn status={column.id} key={column.id}>
                     <header>
                       <span className="column-dot" />
                       <h3>{column.label}</h3>
@@ -478,7 +511,7 @@ export function App({
                         </button>
                       )}
                     </header>
-                    <BoardColumn status={column.id}>
+                    <div className="cards">
                       {tickets.map((item) => (
                         <TicketCard
                           key={item.id}
@@ -503,8 +536,8 @@ export function App({
                       {!tickets.length && (
                         <div className="empty-column">No tickets</div>
                       )}
-                    </BoardColumn>
-                  </section>
+                    </div>
+                  </BoardColumn>
                 );
               })}
             </div>

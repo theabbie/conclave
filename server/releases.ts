@@ -6,6 +6,9 @@ export interface ReleaseEnvironment {
   WORKER_ROLE?: string;
   WORKSPACE_URL?: string;
   WORKSPACE_SOURCE_TOKEN?: string;
+  WORKSPACE?: {
+    fetch(request: Request): Promise<Response>;
+  };
   VERSION?: { id: string };
 }
 

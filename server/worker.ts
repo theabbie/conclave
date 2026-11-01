@@ -107,11 +107,20 @@ async function route(
       if (env.WORKER_ROLE !== "workspace") {
         if (!env.WORKSPACE_URL || !env.WORKSPACE_SOURCE_TOKEN)
           throw new HttpError(503, "Workspace source access is not configured");
-        const response = await fetch(`${env.WORKSPACE_URL}/api/source`, {
-          headers: { Authorization: `Bearer ${env.WORKSPACE_SOURCE_TOKEN}` },
-        });
+        const workspaceRequest = new Request(
+          `${env.WORKSPACE_URL}/api/source`,
+          {
+            headers: { Authorization: `Bearer ${env.WORKSPACE_SOURCE_TOKEN}` },
+          },
+        );
+        const response = env.WORKSPACE
+          ? await env.WORKSPACE.fetch(workspaceRequest)
+          : await fetch(workspaceRequest);
         if (!response.ok)
-          throw new HttpError(502, "Workspace source could not be fetched");
+          throw new HttpError(
+            502,
+            `Workspace source returned HTTP ${response.status}`,
+          );
         return new Response(request.method === "HEAD" ? null : response.body, {
           status: response.status,
           headers: {

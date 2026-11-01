@@ -44,6 +44,35 @@ describe("Worker access boundary", () => {
     });
   });
 
+  it("reads deployment source through the private workspace service binding", async () => {
+    const workspaceFetch = vi.fn(async (_request: Request) =>
+      Response.json({
+        versionId: "workspace-version",
+        source: { schema: 1, revision: "workspace", files: [] },
+      }),
+    );
+    const response = await worker.fetch(
+      new Request("https://conclave.test/api/source", {
+        headers: { Authorization: "Bearer owner" },
+      }),
+      {
+        CONCLAVE_DEPLOY_TOKEN: "owner",
+        WORKER_ROLE: "main",
+        WORKSPACE_URL: "https://workspace.test",
+        WORKSPACE_SOURCE_TOKEN: "private",
+        WORKSPACE: { fetch: workspaceFetch },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      versionId: "workspace-version",
+      source: { revision: "workspace" },
+    });
+    expect(workspaceFetch).toHaveBeenCalledOnce();
+    const request = workspaceFetch.mock.calls[0][0];
+    expect(request.headers.get("Authorization")).toBe("Bearer private");
+  });
+
   it("allows authenticated browser release preflights", async () => {
     const response = await worker.fetch(
       new Request("https://conclave.test/api/releases", {

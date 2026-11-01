@@ -46,6 +46,9 @@ describe("BoardStore", () => {
     board.updateSubtask(child.id, "done", "Implemented");
     expect(board.readTicket(child.id).status).toBe("done");
     expect(board.getSnapshot().comments[0].message).toBe("Implemented");
+    expect(board.listSubtasks(root.id)).toEqual([
+      { id: child.id, title: "Child", status: "done" },
+    ]);
   });
 
   it("updates ticket metadata and records it in the shared comment stream", () => {

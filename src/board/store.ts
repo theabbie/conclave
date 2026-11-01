@@ -335,6 +335,13 @@ export class BoardStore {
     }));
   }
 
+  listSubtasks(parentId: string): Pick<Ticket, "id" | "title" | "status">[] {
+    this.ticket(parentId);
+    return this.state.tickets
+      .filter((ticket) => ticket.parentId === parentId)
+      .map(({ id, title, status }) => ({ id, title, status }));
+  }
+
   readTicket(id: string): Ticket & {
     comments: TicketComment[];
     deployments: DeploymentTask[];

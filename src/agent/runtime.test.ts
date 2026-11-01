@@ -8,6 +8,7 @@ import {
 function adapter(): BoardAgentAdapter {
   return {
     listTickets: vi.fn(() => [{ id: "root", title: "Task" }]),
+    listSubtasks: vi.fn(() => [{ id: "child", title: "Part", status: "done" }]),
     readTicket: vi.fn(() => ({ id: "root" })),
     createSubtask: vi.fn(),
     updateSubtask: vi.fn(),
