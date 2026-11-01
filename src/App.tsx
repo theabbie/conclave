@@ -239,8 +239,9 @@ export function App({
       comment,
       ticket: board.tickets.find((item) => item.id === comment.ticketId),
     }))
-    .filter((item): item is { comment: typeof item.comment; ticket: Ticket } =>
-      Boolean(item.ticket),
+    .filter(
+      (item): item is { comment: typeof item.comment; ticket: Ticket } =>
+        Boolean(item.ticket && item.ticket.status !== "done"),
     )
     .sort((left, right) => right.comment.createdAt - left.comment.createdAt);
   const ticket = board.tickets.find((item) => item.id === selected);
