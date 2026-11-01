@@ -1,0 +1,11 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "method": "GET",
+  "path": "/api/hello",
+  "requestSchema": {},
+  "responseSchema": {
+    "message": "string"
+  },
+  "handlerSource": "return { message: \"Hello, world!\" };"
+}

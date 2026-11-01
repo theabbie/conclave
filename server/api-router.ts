@@ -8,7 +8,7 @@ interface ApiUnit {
     request: Request,
     env: Record<string, unknown>,
     params: Record<string, string>,
-  ) => Promise<Response> | Response;
+  ) => Promise<unknown> | unknown;
 }
 
 function matchPath(
@@ -42,12 +42,20 @@ export async function routeApiUnit(
     if (!params) continue;
     try {
       const response = await unit.handler(request, env, params);
-      if (!(response instanceof Response))
+      if (response instanceof Response) return response;
+      if (response === undefined)
         return Response.json(
           { error: `API unit ${unit.id} returned an invalid response` },
           { status: 500 },
         );
-      return response;
+      try {
+        return Response.json(response);
+      } catch {
+        return Response.json(
+          { error: `API unit ${unit.id} returned an invalid response` },
+          { status: 500 },
+        );
+      }
     } catch (error) {
       return Response.json(
         {

@@ -18,6 +18,11 @@ export interface ApiWorkspaceEvents {
   statusChanged(event: DeploymentStatusEvent): void;
 }
 
+export interface DeploymentVerification {
+  status: number;
+  body: string;
+}
+
 export class ApiWorkspace {
   private source?: SourceArchive;
   private baseVersion?: string;
@@ -73,7 +78,12 @@ export class ApiWorkspace {
   async deployApiUnit(
     unitId: string,
     ticketId: string,
-  ): Promise<DeploymentTask & { url?: string }> {
+  ): Promise<
+    DeploymentTask & {
+      url?: string;
+      verification?: DeploymentVerification;
+    }
+  > {
     await this.ensureLoaded();
     const unit = this.getApiUnit(unitId);
     const now = Date.now();
@@ -90,7 +100,7 @@ export class ApiWorkspace {
       task,
     });
     this.events.taskQueued(task);
-    await this.runDeployment(task);
+    const verification = await this.runDeployment(task, unit);
     const completed = this.state.tasks.find((item) => item.id === task.id);
     if (!completed) throw new Error("Deployment task was lost");
     return {
@@ -101,6 +111,7 @@ export class ApiWorkspace {
               unit.path,
               "https://conclave-workspace.abbie.workers.dev",
             ).toString(),
+            ...(verification ? { verification } : {}),
           }
         : {}),
     };
@@ -128,7 +139,28 @@ export class ApiWorkspace {
     return event;
   }
 
-  private async runDeployment(task: DeploymentTask): Promise<void> {
+  private async verifyDeployment(
+    unit: ApiUnitSpec,
+  ): Promise<DeploymentVerification | undefined> {
+    if (unit.method !== "GET" || unit.path.includes(":")) return undefined;
+    const url = new URL(
+      unit.path,
+      "https://conclave-workspace.abbie.workers.dev",
+    );
+    url.searchParams.set("_conclave_verify", crypto.randomUUID());
+    const response = await fetch(url, { cache: "no-store" });
+    const body = (await response.text()).slice(0, 20_000);
+    if (!response.ok)
+      throw new Error(
+        `Live verification failed (HTTP ${response.status}): ${body || response.statusText}`,
+      );
+    return { status: response.status, body };
+  }
+
+  private async runDeployment(
+    task: DeploymentTask,
+    unit: ApiUnitSpec,
+  ): Promise<DeploymentVerification | undefined> {
     try {
       this.status(task, "in_progress");
       const release = await buildRelease(
@@ -137,14 +169,17 @@ export class ApiWorkspace {
       );
       const receipt = await this.client.stage(release);
       await this.client.activate(receipt);
+      const verification = await this.verifyDeployment(unit);
       this.status(task, "succeeded");
       await this.refresh();
+      return verification;
     } catch (error) {
       this.status(
         task,
         "failed",
         error instanceof Error ? error.message : String(error),
       );
+      return undefined;
     }
   }
 }

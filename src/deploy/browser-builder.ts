@@ -61,7 +61,11 @@ function generatedApiUnits(units: ApiUnitSpec[]): string {
       path: ${JSON.stringify(unit.path)},
       requestSchema: ${JSON.stringify(unit.requestSchema)},
       responseSchema: ${JSON.stringify(unit.responseSchema)},
-      handler: async (request, env, params) => {${unit.handlerSource}\n},
+      handler: async (
+        request: Request,
+        env: Record<string, unknown>,
+        params: Record<string, string>,
+      ) => {${unit.handlerSource}\n},
     }`;
   });
   return `export const apiUnits = [\n${definitions.join(",\n")}\n];`;

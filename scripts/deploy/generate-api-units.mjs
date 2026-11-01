@@ -21,10 +21,7 @@ function validate(unit, file) {
   if (/\beval\s*\(|\bnew\s+Function\b/.test(unit.handlerSource))
     throw new Error(`Dynamic code evaluation is not allowed: ${file}`);
   if (!methods.has(unit.method)) throw new Error(`Invalid API method: ${file}`);
-  if (
-    !/^\/api\/[a-zA-Z0-9_\-/:]*$/.test(unit.path) ||
-    unit.path.includes("//")
-  )
+  if (!/^\/api\/[a-zA-Z0-9_\-/:]*$/.test(unit.path) || unit.path.includes("//"))
     throw new Error(`Invalid API path: ${file}`);
   if (
     reserved.some(
@@ -62,7 +59,11 @@ export async function generateApiUnits() {
     path: ${JSON.stringify(unit.path)},
     requestSchema: ${JSON.stringify(unit.requestSchema)},
     responseSchema: ${JSON.stringify(unit.responseSchema)},
-    handler: async (request, env, params) => {${unit.handlerSource}\n},
+    handler: async (
+      request: Request,
+      env: Record<string, unknown>,
+      params: Record<string, string>,
+    ) => {${unit.handlerSource}\n},
   }`,
   );
   const output = `export const apiUnits = [\n${definitions.join(",\n")}\n];\n`;
