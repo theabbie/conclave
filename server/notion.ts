@@ -59,12 +59,18 @@ function base64Url(bytes: ArrayBuffer | Uint8Array): string {
     .replace(/=+$/g, "");
 }
 
-function fromBase64Url(value: string): Uint8Array {
+function fromBase64Url(value: string): ArrayBuffer {
   const padded = value
     .replaceAll("-", "+")
     .replaceAll("_", "/")
     .padEnd(Math.ceil(value.length / 4) * 4, "=");
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  const bytes = Uint8Array.from(atob(padded), (character) =>
+    character.charCodeAt(0),
+  );
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
 }
 
 function privateJwk(env: Required<NotionEnvironment>): JsonWebKey {
@@ -177,8 +183,8 @@ async function decryptToken(
       ["decrypt"],
     );
     const encrypted = new Uint8Array([
-      ...fromBase64Url(ciphertext),
-      ...fromBase64Url(tag),
+      ...new Uint8Array(fromBase64Url(ciphertext)),
+      ...new Uint8Array(fromBase64Url(tag)),
     ]);
     const plaintext = await crypto.subtle.decrypt(
       {
@@ -219,6 +225,13 @@ async function session(
   )
     throw new HttpError(401, "Invalid Notion session");
   return value as unknown as NotionSession;
+}
+
+export async function authorizeNotionSession(
+  request: Request,
+  env: NotionEnvironment,
+): Promise<void> {
+  await session(request, env);
 }
 
 async function notion(

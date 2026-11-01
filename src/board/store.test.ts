@@ -64,6 +64,25 @@ describe("BoardStore", () => {
     ]);
   });
 
+  it("includes comments in ticket reads and emits user comment events", () => {
+    const board = new BoardStore();
+    const ticket = board.createTicket("Task", "");
+    const events: import("./store").BoardEvent[] = [];
+    board.subscribeEvents((event) => events.push(event));
+    board.addComment(ticket.id, "New requirement", "user");
+    expect(board.readTicket(ticket.id).comments).toMatchObject([
+      { message: "New requirement" },
+    ]);
+    expect(events).toMatchObject([
+      {
+        type: "comment.added",
+        ticketId: ticket.id,
+        message: "New requirement",
+        source: "user",
+      },
+    ]);
+  });
+
   it("deletes only backlog tickets and removes their complete subtree", () => {
     const board = new BoardStore();
     const root = board.createTicket("Root", "");

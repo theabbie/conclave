@@ -137,6 +137,8 @@ class Planner {
         'For tool use, use one or more actions: {"tool":"tool_name","arguments":{...}}.',
         "When using tools, do not include text actions in the same response.",
         "Tool names and arguments must match the available tools and their JSON schema.",
+        "Every tool in TOOLS is executable in this session. Call a relevant tool instead of claiming it is unavailable.",
+        "Only report a capability or permission failure after a tool result demonstrates that failure.",
         "Do not invent tool names. Do not include followups.",
       ].join("\n"),
     ]
@@ -218,6 +220,19 @@ class Planner {
           !action.text.trim()
         )
           throw new Error("Text action needs text");
+        const hasToolResult = (this.context.messages ?? []).some((message) =>
+          /tool/i.test(String(message.role ?? "")),
+        );
+        if (
+          this.tools.length &&
+          !hasToolResult &&
+          /\b(?:unable|cannot|can't|do not have|don't have)\b[\s\S]{0,180}\b(?:tools?|access|board|deploy|api)\b/i.test(
+            action.text,
+          )
+        )
+          throw new Error(
+            "A listed capability cannot be declared unavailable before calling its tool",
+          );
         return { type: "text", text: action.text };
       }
       if (!("tool" in action) || typeof action.tool !== "string")

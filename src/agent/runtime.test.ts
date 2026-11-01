@@ -11,6 +11,7 @@ function adapter(): BoardAgentAdapter {
     readTicket: vi.fn(() => ({ id: "root" })),
     createSubtask: vi.fn(),
     updateSubtask: vi.fn(),
+    moveTicket: vi.fn(),
     addComment: vi.fn(),
     setTicketData: vi.fn(),
     deleteTicketData: vi.fn(),
@@ -46,6 +47,28 @@ describe("ticket agent", () => {
     ).rejects.toThrow("root ticket");
     expect(board.createSubtask).not.toHaveBeenCalled();
     expect(board.updateSubtask).not.toHaveBeenCalled();
+  });
+
+  it("lets the agent explicitly accept work or request root-ticket review", async () => {
+    const board = adapter();
+    const { agent } = createTicketAgent({ rootId: "root", settings, board });
+    const status = agent.state.tools.find(
+      (tool) => tool.name === "update_ticket_status",
+    )!;
+    await status.execute("accept", { status: "in_progress" });
+    await status.execute("review", { status: "review" });
+    expect(board.moveTicket).toHaveBeenNthCalledWith(
+      1,
+      "root",
+      "in_progress",
+      "agent",
+    );
+    expect(board.moveTicket).toHaveBeenNthCalledWith(
+      2,
+      "root",
+      "review",
+      "agent",
+    );
   });
 
   it("exposes atomic API tools and requires a scoped deployment subtask", async () => {

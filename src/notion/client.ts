@@ -37,6 +37,12 @@ export class NotionClient {
     return Boolean(this.storage.getItem(sessionKey));
   }
 
+  sessionToken(): string {
+    const token = this.storage.getItem(sessionKey);
+    if (!token) throw new Error("Connect Notion to continue");
+    return token;
+  }
+
   connectUrl(): string {
     return `${this.baseUrl}/api/integrations/notion/start`;
   }

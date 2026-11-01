@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Database, Link2, LoaderCircle } from "lucide-react";
 import { BoardStore } from "./board/store";
 import { App } from "./App";
+import { SelectControl } from "./components/SelectControl";
 import {
   NotionClient,
   type NotionPage,
@@ -64,7 +65,7 @@ function Setup({ status, ready }: { status: NotionStatus; ready(): void }) {
         ) : (
           <label>
             Parent page
-            <select
+            <SelectControl
               value={selected}
               onChange={(event) => setSelected(event.target.value)}
             >
@@ -73,7 +74,7 @@ function Setup({ status, ready }: { status: NotionStatus; ready(): void }) {
                   {page.title}
                 </option>
               ))}
-            </select>
+            </SelectControl>
           </label>
         )}
         {!loading && !pages.length && (
@@ -173,6 +174,7 @@ function Bootstrap() {
         store={store}
         notion={{
           ...status,
+          sessionToken: notion.sessionToken(),
           disconnect: () => {
             notion.disconnect();
             location.reload();

@@ -567,8 +567,17 @@ textarea {
   flex-direction: column;
   border-left: 1px solid var(--outline);
   background: var(--surface);
-  box-shadow: -7px 0 0 color-mix(in srgb, var(--accent) 65%, transparent);
+  box-shadow: none;
+  transition: transform 180ms ease-out;
   animation: drawer-in 0.2s ease-out;
+}
+.ticket-drawer.is-dragging {
+  transition: none;
+}
+.ticket-drawer.is-closing {
+  transform: translateX(100%);
+  transition-timing-function: ease-in;
+  animation: none;
 }
 @keyframes drawer-in {
   from {
@@ -929,6 +938,9 @@ textarea {
     box-shadow: none;
     transform: translateY(var(--drawer-offset));
     animation: sheet-in 0.22s ease-out;
+  }
+  .ticket-drawer.is-closing {
+    transform: translateY(100%);
   }
   @keyframes sheet-in {
     from {

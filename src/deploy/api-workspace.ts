@@ -73,9 +73,9 @@ export class ApiWorkspace {
   async deployApiUnit(
     unitId: string,
     ticketId: string,
-  ): Promise<DeploymentTask> {
+  ): Promise<DeploymentTask & { url?: string }> {
     await this.ensureLoaded();
-    this.getApiUnit(unitId);
+    const unit = this.getApiUnit(unitId);
     const now = Date.now();
     const task: DeploymentTask = {
       id: crypto.randomUUID(),
@@ -90,8 +90,20 @@ export class ApiWorkspace {
       task,
     });
     this.events.taskQueued(task);
-    void this.runDeployment(task);
-    return { ...task };
+    await this.runDeployment(task);
+    const completed = this.state.tasks.find((item) => item.id === task.id);
+    if (!completed) throw new Error("Deployment task was lost");
+    return {
+      ...completed,
+      ...(completed.status === "succeeded"
+        ? {
+            url: new URL(
+              unit.path,
+              "https://conclave-workspace.abbie.workers.dev",
+            ).toString(),
+          }
+        : {}),
+    };
   }
 
   private async ensureLoaded(): Promise<void> {

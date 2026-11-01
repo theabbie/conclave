@@ -12,7 +12,6 @@ import {
 import {
   ArrowUpRight,
   Check,
-  ChevronDown,
   Circle,
   Columns3,
   GripVertical,
@@ -31,6 +30,7 @@ import { createTicketAgent } from "./agent/runtime";
 import type { AgentSettings } from "./agent/transport";
 import { BoardStore, type Status, type Ticket } from "./board/store";
 import { Modal } from "./components/Modal";
+import { SelectControl } from "./components/SelectControl";
 import { TicketDrawer } from "./components/TicketDrawer";
 import { ApiWorkspace } from "./deploy/api-workspace";
 import { ReleaseClient } from "./deploy/client";
@@ -45,7 +45,6 @@ const columns: { id: Status; label: string }[] = [
 
 interface ConnectionSettings extends AgentSettings {
   deployEndpoint: string;
-  deployToken: string;
 }
 
 function BoardColumn({
@@ -113,6 +112,7 @@ function TicketCard({
 interface NotionConnection {
   workspaceName: string;
   boardUrl: string | null;
+  sessionToken: string;
   disconnect(): void;
 }
 
@@ -136,7 +136,6 @@ export function App({
     model: "google/gemini-2.5-flash",
     token: "",
     deployEndpoint: "https://conclave.abbie.workers.dev",
-    deployToken: "",
   });
   const [running, setRunning] = useState<{ id: string; abort: () => void }>();
   const [notice, setNotice] = useState("");
@@ -158,7 +157,7 @@ export function App({
   React.useEffect(
     () =>
       store.subscribeEvents((event) => {
-        if (event.type !== "ticket.status_changed") return;
+        if (event.type === "deployment.status_changed") return;
         const runtime = runtimeRef.current;
         if (
           !runtime ||
@@ -167,6 +166,28 @@ export function App({
         )
           return;
         try {
+          if (event.type === "comment.added") {
+            if (event.source !== "user") return;
+            runtime.deliverExternalEvent(
+              {
+                id: event.id,
+                source: event.source,
+                type: event.type,
+                ticketId: event.ticketId,
+                payload: {
+                  message: event.message,
+                  occurredAt: event.occurredAt,
+                },
+              },
+              "steer",
+            );
+            return;
+          }
+          if (
+            event.type !== "ticket.status_changed" ||
+            event.source === "agent"
+          )
+            return;
           runtime.deliverExternalEvent(
             {
               id: event.id,
@@ -205,7 +226,7 @@ export function App({
     }
   };
 
-  const start = async (target: Ticket) => {
+  const start = async (target: Ticket, followUp?: string) => {
     if (activeRun.current) {
       setNotice("An agent is already working. Stop that run first.");
       return;
@@ -219,7 +240,7 @@ export function App({
     let stopped = false;
     try {
       const apis = new ApiWorkspace(
-        new ReleaseClient(settings.deployEndpoint, settings.deployToken),
+        new ReleaseClient(settings.deployEndpoint, notion.sessionToken),
         {
           taskQueued: (task) => store.linkDeployment(task),
           statusChanged: (event) => {
@@ -261,8 +282,7 @@ export function App({
         },
       });
       runtimeRef.current = runtime;
-      store.moveTicket(target.id, "in_progress");
-      store.addComment(target.id, "Agent started.");
+      store.addComment(target.id, "Agent started.", "system");
       setRunning({
         id: target.id,
         abort: () => {
@@ -271,8 +291,14 @@ export function App({
         },
       });
       setNotice("");
+      const current = store.readTicket(target.id);
       await runtime.run(
-        `Work on ticket ${target.id}: ${target.title}\n${target.description}`,
+        [
+          `Current ticket context:\n${JSON.stringify(current, null, 2)}`,
+          followUp
+            ? `User follow-up:\n${followUp}`
+            : "Assess and work on this ticket.",
+        ].join("\n\n"),
       );
       const last = runtime.agent.state.messages
         .filter((message) => message.role === "assistant")
@@ -282,14 +308,18 @@ export function App({
           .filter((part) => part.type === "text")
           .map((part) => part.text)
           .join("\n");
-        if (summary) store.addComment(target.id, summary);
+        if (summary) store.addComment(target.id, summary, "agent");
       }
-      store.moveTicket(target.id, stopped ? "ready" : "review");
+      const finalStatus = store.readTicket(target.id).status;
+      if (stopped) store.moveTicket(target.id, "ready", "agent");
+      else if (finalStatus === "ready" || finalStatus === "in_progress")
+        store.moveTicket(target.id, "review", "agent");
       store.addComment(
         target.id,
         stopped
           ? "Run stopped by you."
           : "Run finished. Review the result before marking this ticket done.",
+        "system",
       );
     } catch (error) {
       const message = stopped
@@ -298,8 +328,8 @@ export function App({
           ? error.message
           : String(error);
       attempt(() => {
-        store.moveTicket(target.id, "ready");
-        store.addComment(target.id, message);
+        store.moveTicket(target.id, stopped ? "ready" : "review", "agent");
+        store.addComment(target.id, message, "system");
       });
       setNotice(message);
     } finally {
@@ -316,11 +346,12 @@ export function App({
       return;
     }
     if (status === "in_progress") {
-      void start(target);
+      attempt(() => store.moveTicket(target.id, status));
+      void start({ ...target, status });
       return;
     }
     attempt(() => store.moveTicket(target.id, status));
-    if (status === "ready") void start(target);
+    if (status === "ready") void start({ ...target, status });
   };
 
   const dropTicket = ({ active, over }: DragEndEvent) => {
@@ -533,8 +564,8 @@ export function App({
       {configuring && (
         <Modal title="Connections" close={() => setConfiguring(false)}>
           <p className="modal-intro">
-            Agent sessions remain in working memory. Deployment credentials stay
-            in this browser session.
+            Agent sessions remain in working memory. Notion authorizes board and
+            deployment access.
           </p>
           <div className="notion-connection">
             <div>
@@ -571,7 +602,6 @@ export function App({
                 model: String(data.get("model")),
                 token: String(data.get("token")),
                 deployEndpoint,
-                deployToken: String(data.get("deployToken")),
               });
               setConfiguring(false);
               setNotice("Connections updated.");
@@ -606,15 +636,6 @@ export function App({
                 type="url"
                 required
                 defaultValue={settings.deployEndpoint}
-              />
-            </label>
-            <label>
-              Deployment token <span className="muted">optional</span>
-              <input
-                name="deployToken"
-                type="password"
-                autoComplete="off"
-                defaultValue={settings.deployToken}
               />
             </label>
             <footer className="modal-actions">
@@ -653,12 +674,17 @@ export function App({
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
                 attempt(() => {
-                  store.updateTicket(
+                  const updated = store.updateTicket(
                     ticket.id,
                     String(data.get("title")),
                     String(data.get("description")),
                   );
                   setEditingTicket(false);
+                  if (!activeRun.current && updated.status === "review")
+                    void start(
+                      updated,
+                      "The user updated the ticket title or description.",
+                    );
                 });
               }}
             >
@@ -690,22 +716,19 @@ export function App({
           )}
           <label className="field-label">
             Status
-            <span className="select-control">
-              <select
-                value={ticket.status}
-                disabled={Boolean(
-                  running && store.isInScope(running.id, ticket.id),
-                )}
-                onChange={(event) => move(ticket, event.target.value as Status)}
-              >
-                {columns.map((column) => (
-                  <option key={column.id} value={column.id}>
-                    {column.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={15} aria-hidden="true" />
-            </span>
+            <SelectControl
+              value={ticket.status}
+              disabled={Boolean(
+                running && store.isInScope(running.id, ticket.id),
+              )}
+              onChange={(event) => move(ticket, event.target.value as Status)}
+            >
+              {columns.map((column) => (
+                <option key={column.id} value={column.id}>
+                  {column.label}
+                </option>
+              ))}
+            </SelectControl>
           </label>
           <p className="field-hint">
             Ready starts the agent. Completed runs return here for review.
@@ -773,10 +796,18 @@ export function App({
             onSubmit={(event) => {
               event.preventDefault();
               const data = new FormData(event.currentTarget);
-              attempt(() =>
-                store.addComment(ticket.id, String(data.get("comment"))),
-              );
-              event.currentTarget.reset();
+              const message = String(data.get("comment"));
+              try {
+                store.addComment(ticket.id, message, "user");
+                event.currentTarget.reset();
+                setNotice("");
+                if (!activeRun.current && ticket.status === "review")
+                  void start(store.readTicket(ticket.id), message);
+              } catch (error) {
+                setNotice(
+                  error instanceof Error ? error.message : String(error),
+                );
+              }
             }}
           >
             <textarea

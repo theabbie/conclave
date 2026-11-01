@@ -41,7 +41,17 @@ export interface TicketStatusEvent {
   occurredAt: number;
 }
 
-export type BoardEvent = TicketStatusEvent | DeploymentStatusEvent;
+export interface CommentAddedEvent {
+  type: "comment.added";
+  id: string;
+  ticketId: string;
+  message: string;
+  source: "user" | "agent" | "system";
+  occurredAt: number;
+}
+
+export type BoardEvent =
+  TicketStatusEvent | CommentAddedEvent | DeploymentStatusEvent;
 
 export interface BoardState {
   tickets: Ticket[];
@@ -300,7 +310,11 @@ export class BoardStore {
     return { ...ticket };
   }
 
-  moveTicket(id: string, status: Status): Ticket {
+  moveTicket(
+    id: string,
+    status: Status,
+    source: TicketStatusEvent["source"] = "user",
+  ): Ticket {
     validStatus(status);
     const previous = this.ticket(id);
     const ticket = { ...previous, status };
@@ -310,7 +324,7 @@ export class BoardStore {
         candidate.id === id ? ticket : candidate,
       ),
     });
-    this.statusEvent(previous, ticket, "user");
+    this.statusEvent(previous, ticket, source);
     return { ...ticket };
   }
 
@@ -321,9 +335,21 @@ export class BoardStore {
     }));
   }
 
-  readTicket(id: string): Ticket {
+  readTicket(id: string): Ticket & {
+    comments: TicketComment[];
+    deployments: DeploymentTask[];
+  } {
     const ticket = this.ticket(id);
-    return { ...ticket, data: { ...ticket.data } };
+    return {
+      ...ticket,
+      data: { ...ticket.data },
+      comments: this.state.comments
+        .filter((comment) => comment.ticketId === id)
+        .map((comment) => ({ ...comment })),
+      deployments: (this.state.deployments ?? [])
+        .filter((deployment) => deployment.ticketId === id)
+        .map((deployment) => ({ ...deployment })),
+    };
   }
 
   updateTicket(id: string, title: string, description: string): Ticket {
@@ -340,20 +366,26 @@ export class BoardStore {
       ticket.description === previous.description
     )
       return { ...ticket, data: { ...ticket.data } };
+    const entry = {
+      id: crypto.randomUUID(),
+      ticketId: id,
+      message: "Ticket title or description was updated.",
+      createdAt: Date.now(),
+    };
     this.commit({
       ...this.state,
       tickets: this.state.tickets.map((candidate) =>
         candidate.id === id ? ticket : candidate,
       ),
-      comments: [
-        ...this.state.comments,
-        {
-          id: crypto.randomUUID(),
-          ticketId: id,
-          message: "Ticket title or description was updated.",
-          createdAt: Date.now(),
-        },
-      ],
+      comments: [...this.state.comments, entry],
+    });
+    this.emit({
+      type: "comment.added",
+      id: crypto.randomUUID(),
+      ticketId: id,
+      message: entry.message,
+      source: "user",
+      occurredAt: entry.createdAt,
     });
     return { ...ticket, data: { ...ticket.data } };
   }
@@ -456,7 +488,11 @@ export class BoardStore {
     return { ...ticket };
   }
 
-  addComment(ticketId: string, message: string): TicketComment {
+  addComment(
+    ticketId: string,
+    message: string,
+    source: CommentAddedEvent["source"] = "user",
+  ): TicketComment {
     this.ticket(ticketId);
     const entry = {
       id: crypto.randomUUID(),
@@ -465,6 +501,14 @@ export class BoardStore {
       createdAt: Date.now(),
     };
     this.commit({ ...this.state, comments: [...this.state.comments, entry] });
+    this.emit({
+      type: "comment.added",
+      id: crypto.randomUUID(),
+      ticketId,
+      message: entry.message,
+      source,
+      occurredAt: entry.createdAt,
+    });
     return { ...entry };
   }
 

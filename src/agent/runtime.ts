@@ -17,7 +17,16 @@ export interface BoardAgentAdapter {
   readTicket(id: string): unknown;
   createSubtask(parentId: string, title: string, description: string): unknown;
   updateSubtask(id: string, status: SubtaskStatus, summary?: string): unknown;
-  addComment(ticketId: string, message: string): unknown;
+  moveTicket(
+    id: string,
+    status: SubtaskStatus,
+    source?: "user" | "agent" | "deployment",
+  ): unknown;
+  addComment(
+    ticketId: string,
+    message: string,
+    source?: "user" | "agent" | "system",
+  ): unknown;
   setTicketData(ticketId: string, key: string, value: string): unknown;
   deleteTicketData(ticketId: string, key: string): unknown;
   isInScope(rootId: string, ticketId: string): boolean;
@@ -86,6 +95,20 @@ export function createTicketAgent({
       },
     }),
     defineTool({
+      name: "update_ticket_status",
+      label: "Update active ticket status",
+      description:
+        "Move the active root ticket to in progress when taking ownership, or to review when asking the user a question or presenting a result.",
+      parameters: Type.Object({
+        status: Type.Union([
+          Type.Literal("in_progress"),
+          Type.Literal("review"),
+        ]),
+      }),
+      execute: async (_, args) =>
+        result(await board.moveTicket(rootId, args.status, "agent")),
+    }),
+    defineTool({
       name: "create_subtask",
       label: "Create subtask",
       description:
@@ -140,7 +163,9 @@ export function createTicketAgent({
       }),
       execute: async (_, args) => {
         assertScope(args.ticketId);
-        return result(await board.addComment(args.ticketId, args.message));
+        return result(
+          await board.addComment(args.ticketId, args.message, "agent"),
+        );
       },
     }),
     defineTool({
@@ -253,7 +278,7 @@ export function createTicketAgent({
     initialState: {
       model,
       tools,
-      systemPrompt: `Work on ticket ${rootId}. Read it first, including its ticket data and comments. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. Deployment is asynchronous; status events are authoritative. Do not claim work you have not performed. Explicitly report when a task needs unavailable capabilities. Finish with a concise result for user review.`,
+      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket, its data, comments, and deployments. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success. Do not claim work you have not performed. Finish with a concise result for user review.`,
     },
     streamFn: createWebiomeTransport(settings),
     toolExecution: "sequential",

@@ -8,6 +8,7 @@ import {
   type ReleaseEnvironment,
 } from "./releases";
 import {
+  authorizeNotionSession,
   notionCallback,
   notionPages,
   notionReadBoard,
@@ -97,7 +98,11 @@ async function route(
     return notionWriteBoard(request, env);
 
   if (path === "/api/source" || path.startsWith("/api/releases")) {
-    await authorize(request, env);
+    try {
+      await authorizeNotionSession(request, env);
+    } catch {
+      await authorize(request, env);
+    }
     if (path === "/api/source" && ["GET", "HEAD"].includes(request.method)) {
       if (env.WORKER_ROLE !== "workspace") {
         if (!env.WORKSPACE_URL || !env.WORKSPACE_SOURCE_TOKEN)
