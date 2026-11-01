@@ -358,6 +358,36 @@ export class BoardStore {
     return { ...ticket, data: { ...ticket.data } };
   }
 
+  deleteTicket(id: string): void {
+    const ticket = this.ticket(id);
+    if (ticket.status !== "backlog")
+      throw new Error("Only backlog tickets can be deleted");
+    const removed = new Set<string>([id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const candidate of this.state.tickets) {
+        if (
+          candidate.parentId &&
+          removed.has(candidate.parentId) &&
+          !removed.has(candidate.id)
+        ) {
+          removed.add(candidate.id);
+          changed = true;
+        }
+      }
+    }
+    this.commit({
+      tickets: this.state.tickets.filter((item) => !removed.has(item.id)),
+      comments: this.state.comments.filter(
+        (comment) => !removed.has(comment.ticketId),
+      ),
+      deployments: (this.state.deployments ?? []).filter(
+        (deployment) => !removed.has(deployment.ticketId),
+      ),
+    });
+  }
+
   setTicketData(ticketId: string, key: string, value: string): Ticket {
     const previous = this.ticket(ticketId);
     const normalizedKey = requiredText(key, "Data key");

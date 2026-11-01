@@ -23,6 +23,7 @@ import {
   Search,
   Settings2,
   Square,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -663,13 +664,24 @@ export function App({
             >
               <label>
                 Title
-                <input name="title" required maxLength={200} defaultValue={ticket.title} />
+                <input
+                  name="title"
+                  required
+                  maxLength={200}
+                  defaultValue={ticket.title}
+                />
               </label>
               <label>
                 Description
-                <textarea name="description" rows={5} defaultValue={ticket.description} />
+                <textarea
+                  name="description"
+                  rows={5}
+                  defaultValue={ticket.description}
+                />
               </label>
-              <button className="secondary full" type="submit">Save ticket</button>
+              <button className="secondary full" type="submit">
+                Save ticket
+              </button>
             </form>
           ) : (
             <p className="ticket-description">
@@ -795,6 +807,24 @@ export function App({
               <p className="muted">No comments yet.</p>
             )}
           </div>
+          {ticket.status === "backlog" && (
+            <button
+              className="danger-button full"
+              onClick={() => {
+                if (
+                  !window.confirm("Delete this ticket and all of its subtasks?")
+                )
+                  return;
+                attempt(() => {
+                  store.deleteTicket(ticket.id);
+                  setEditingTicket(false);
+                  setSelected(undefined);
+                });
+              }}
+            >
+              <Trash2 size={14} /> Delete ticket
+            </button>
+          )}
         </TicketDrawer>
       )}
     </div>

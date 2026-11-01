@@ -727,6 +727,27 @@ textarea {
   width: 100%;
   margin-top: 10px;
 }
+.danger-button {
+  min-height: 36px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #8c2e24;
+  border-radius: 4px;
+  background: transparent;
+  color: #8c2e24;
+  font-size: 11px;
+  font-weight: 600;
+}
+.danger-button.full {
+  width: 100%;
+  margin-top: 24px;
+}
+.danger-button:hover {
+  background: color-mix(in srgb, #8c2e24 8%, transparent);
+}
 .startup-error {
   max-width: 700px;
   margin: 70px auto;

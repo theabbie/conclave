@@ -57,8 +57,25 @@ describe("BoardStore", () => {
       description: "New description",
     });
     expect(board.getSnapshot().comments).toMatchObject([
-      { ticketId: ticket.id, message: "Ticket title or description was updated." },
+      {
+        ticketId: ticket.id,
+        message: "Ticket title or description was updated.",
+      },
     ]);
+  });
+
+  it("deletes only backlog tickets and removes their complete subtree", () => {
+    const board = new BoardStore();
+    const root = board.createTicket("Root", "");
+    const child = board.createSubtask(root.id, "Child", "");
+    board.addComment(child.id, "Nested context");
+    board.deleteTicket(root.id);
+    expect(board.listTickets()).toEqual([]);
+    expect(board.getSnapshot().comments).toEqual([]);
+
+    const active = board.createTicket("Active", "");
+    board.moveTicket(active.id, "ready");
+    expect(() => board.deleteTicket(active.id)).toThrow("Only backlog");
   });
 
   it("restores saved data and makes interrupted runs require explicit restart", async () => {

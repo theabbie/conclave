@@ -8,7 +8,12 @@ interface TicketDrawerProps {
   children: React.ReactNode;
 }
 
-export function TicketDrawer({ title, action, close, children }: TicketDrawerProps) {
+export function TicketDrawer({
+  title,
+  action,
+  close,
+  children,
+}: TicketDrawerProps) {
   const [offset, setOffset] = React.useState(0);
   const start = React.useRef<number | undefined>(undefined);
 
@@ -61,13 +66,13 @@ export function TicketDrawer({ title, action, close, children }: TicketDrawerPro
           <h2>{title}</h2>
           <div className="drawer-actions">
             {action}
-          <button
-            className="icon-button"
-            aria-label="Close ticket"
-            onClick={close}
-          >
-            <X size={18} />
-          </button>
+            <button
+              className="icon-button"
+              aria-label="Close ticket"
+              onClick={close}
+            >
+              <X size={18} />
+            </button>
           </div>
         </header>
         <div className="drawer-content">{children}</div>
