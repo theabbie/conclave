@@ -369,7 +369,7 @@ export function App({
           .filter((part) => part.type === "text")
           .map((part) => part.text)
           .join("\n");
-        if (summary) store.addComment(target.id, summary, "agent");
+        if (summary) store.addComment(target.id, summary, "agent", true);
       }
       settleInactiveSubtasks(target.id);
       const finalStatus = store.readTicket(target.id).status;
@@ -392,7 +392,7 @@ export function App({
       attempt(() => {
         settleInactiveSubtasks(target.id);
         store.moveTicket(target.id, stopped ? "ready" : "review", "agent");
-        store.addComment(target.id, message, "system");
+        store.addComment(target.id, message, "system", !stopped);
       });
       setNotice(message);
     } finally {
