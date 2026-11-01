@@ -115,6 +115,7 @@ export async function buildRelease(
   );
   const result = await esbuild.build({
     entryPoints: ["server/worker.ts"],
+    outfile: "worker.js",
     bundle: true,
     write: false,
     format: "esm",
@@ -133,7 +134,10 @@ export async function buildRelease(
                 : { errors: [{ text: `Entry point not found: ${args.path}` }] };
             }
             if (args.path.endsWith("generated/source.snapshot.txt"))
-              return { path: "./source.snapshot.txt", external: true };
+              return {
+                path: "./generated/source.snapshot.txt",
+                external: true,
+              };
             if (!args.path.startsWith("."))
               return {
                 errors: [
