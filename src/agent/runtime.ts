@@ -42,11 +42,19 @@ export interface ApiAgentAdapter {
   deployApiUnit(unitId: string, ticketId: string): unknown | Promise<unknown>;
 }
 
+export interface LocalShellAgentAdapter {
+  run(
+    command: string,
+    options?: { timeoutMs?: number; maxOutputBytes?: number },
+  ): Promise<{ output: string; exitCode: number; durationMs: number }>;
+}
+
 export interface TicketAgentOptions {
   rootId: string;
   settings: AgentSettings;
   board: BoardAgentAdapter;
   apis?: ApiAgentAdapter;
+  shell?: LocalShellAgentAdapter;
   onEvent?: (event: AgentEvent) => void;
   maxTurns?: number;
 }
@@ -60,6 +68,7 @@ export function createTicketAgent({
   settings,
   board,
   apis,
+  shell,
   onEvent,
   maxTurns = 20,
 }: TicketAgentOptions) {
@@ -280,6 +289,37 @@ export function createTicketAgent({
           }),
         ]
       : []),
+    ...(shell
+      ? [
+          defineTool({
+            name: "local_shell_info",
+            label: "Inspect local shell",
+            description:
+              "Confirm access to the user-configured local shell and return its working directory and operating system.",
+            parameters: Type.Object({}),
+            execute: async () =>
+              result(await shell.run("pwd; uname -s; uname -m")),
+          }),
+          defineTool({
+            name: "run_local_command",
+            label: "Run local command",
+            description:
+              "Run a raw shell command on the user's configured machine and return combined output, exit code, and duration.",
+            parameters: Type.Object({
+              command: Type.String({ minLength: 1, maxLength: 50_000 }),
+              timeoutSeconds: Type.Optional(
+                Type.Number({ minimum: 1, maximum: 300 }),
+              ),
+            }),
+            execute: async (_, args) =>
+              result(
+                await shell.run(args.command, {
+                  timeoutMs: (args.timeoutSeconds ?? 30) * 1000,
+                }),
+              ),
+          }),
+        ]
+      : []),
   ];
   const model: Model<"webiome-exa"> = {
     id: settings.model,
@@ -297,7 +337,7 @@ export function createTicketAgent({
     initialState: {
       model,
       tools,
-      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never ask the user for access to ticket or subtask records before trying list_subtasks and read_ticket. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket and a lightweight index of its direct subtasks. Fetch subtask details on demand with read_ticket. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Set add_comment attention to true only when the user needs to notice or act on the comment, such as an approval request, a question, a blocker, or a completed result. Keep it false for routine starting, progress, and activity updates. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success. Do not claim work you have not performed. Finish with a concise result for user review.`,
+      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never ask the user for access to ticket or subtask records before trying list_subtasks and read_ticket. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket and a lightweight index of its direct subtasks. Fetch subtask details on demand with read_ticket. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Set add_comment attention to true only when the user needs to notice or act on the comment, such as an approval request, a question, a blocker, or a completed result. Keep it false for routine starting, progress, and activity updates. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success.${shell ? " The configured local shell is an explicitly authorized execution environment. Inspect it with local_shell_info and use run_local_command when the ticket requires local files, programs, builds, tests, or system commands." : ""} Do not claim work you have not performed. Finish with a concise result for user review.`,
     },
     streamFn: createWebiomeTransport(settings),
     toolExecution: "sequential",

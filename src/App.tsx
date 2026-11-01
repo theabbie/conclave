@@ -23,6 +23,7 @@ import {
   Search,
   Settings2,
   Square,
+  Terminal,
   Trash2,
   UserRound,
   X,
@@ -35,6 +36,7 @@ import { SelectControl } from "./components/SelectControl";
 import { TicketDrawer } from "./components/TicketDrawer";
 import { ApiWorkspace } from "./deploy/api-workspace";
 import { ReleaseClient } from "./deploy/client";
+import { LocalShellClient, validateLocalShellUrl } from "./local-shell/client";
 
 const columns: { id: Status; label: string }[] = [
   { id: "backlog", label: "Backlog" },
@@ -46,6 +48,7 @@ const columns: { id: Status; label: string }[] = [
 
 interface ConnectionSettings extends AgentSettings {
   deployEndpoint: string;
+  shellUrl: string;
 }
 
 function BoardColumn({
@@ -141,10 +144,13 @@ export function App({
     model: "google/gemini-2.5-flash",
     token: "",
     deployEndpoint: "https://conclave.abbie.workers.dev",
+    shellUrl: "",
   });
   const [running, setRunning] = useState<{ id: string; abort: () => void }>();
   const [notice, setNotice] = useState("");
   const [tool, setTool] = useState("");
+  const [testingShell, setTestingShell] = useState(false);
+  const [shellTest, setShellTest] = useState("");
   const activeRun = React.useRef<string | null>(null);
   const runtimeRef = React.useRef<
     ReturnType<typeof createTicketAgent> | undefined
@@ -239,9 +245,8 @@ export function App({
       comment,
       ticket: board.tickets.find((item) => item.id === comment.ticketId),
     }))
-    .filter(
-      (item): item is { comment: typeof item.comment; ticket: Ticket } =>
-        Boolean(item.ticket && item.ticket.status !== "done"),
+    .filter((item): item is { comment: typeof item.comment; ticket: Ticket } =>
+      Boolean(item.ticket && item.ticket.status !== "done"),
     )
     .sort((left, right) => right.comment.createdAt - left.comment.createdAt);
   const ticket = board.tickets.find((item) => item.id === selected);
@@ -257,6 +262,24 @@ export function App({
       setNotice("");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const testShell = async (url: string) => {
+    setTestingShell(true);
+    setShellTest("");
+    try {
+      const result = await new LocalShellClient(url).run("pwd; uname -s", {
+        timeoutMs: 10_000,
+        maxOutputBytes: 16_000,
+      });
+      setShellTest(
+        `${result.output || "Connected"}\nExit ${result.exitCode} · ${result.durationMs} ms`,
+      );
+    } catch (error) {
+      setShellTest(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTestingShell(false);
     }
   };
 
@@ -336,6 +359,9 @@ export function App({
         settings,
         board: store,
         apis,
+        ...(settings.shellUrl
+          ? { shell: new LocalShellClient(settings.shellUrl) }
+          : {}),
         onEvent: (event) => {
           if (event.type === "tool_execution_start")
             setTool(event.toolName.replaceAll("_", " "));
@@ -684,14 +710,18 @@ export function App({
               const data = new FormData(event.currentTarget);
               const endpoint = String(data.get("endpoint"));
               const deployEndpoint = String(data.get("deployEndpoint"));
+              const shellUrl = String(data.get("shellUrl")).trim();
               try {
                 for (const value of [endpoint, deployEndpoint]) {
                   const url = new URL(value);
                   if (!["https:", "http:"].includes(url.protocol))
                     throw new Error();
                 }
+                if (shellUrl) validateLocalShellUrl(shellUrl);
               } catch {
-                setNotice("Enter valid HTTP or HTTPS endpoints.");
+                setNotice(
+                  "Enter valid HTTP/HTTPS endpoints and a ws:// or wss:// shell URL.",
+                );
                 return;
               }
               setSettings({
@@ -699,6 +729,7 @@ export function App({
                 model: String(data.get("model")),
                 token: String(data.get("token")),
                 deployEndpoint,
+                shellUrl,
               });
               setConfiguring(false);
               setNotice("Connections updated.");
@@ -735,6 +766,49 @@ export function App({
                 defaultValue={settings.deployEndpoint}
               />
             </label>
+            <label>
+              Local shell <span className="muted">optional</span>
+              <input
+                name="shellUrl"
+                type="url"
+                placeholder="ws://127.0.0.1:8080"
+                defaultValue={settings.shellUrl}
+              />
+              <span className="field-hint">
+                Enables raw commands on the connected machine. Use wss:// for
+                tunneled or public URLs.
+              </span>
+            </label>
+            <button
+              type="button"
+              className="secondary full"
+              disabled={testingShell}
+              onClick={(event) => {
+                const form = event.currentTarget.form;
+                if (!form) return;
+                const url = String(new FormData(form).get("shellUrl")).trim();
+                if (!url) {
+                  setShellTest("Enter a local shell URL first.");
+                  return;
+                }
+                try {
+                  validateLocalShellUrl(url);
+                  void testShell(url);
+                } catch (error) {
+                  setShellTest(
+                    error instanceof Error ? error.message : String(error),
+                  );
+                }
+              }}
+            >
+              {testingShell ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <Terminal size={15} />
+              )}
+              Test local shell
+            </button>
+            {shellTest && <pre className="shell-test-output">{shellTest}</pre>}
             <footer className="modal-actions">
               <button type="button" onClick={() => setConfiguring(false)}>
                 Cancel

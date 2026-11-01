@@ -3,6 +3,7 @@ import {
   createTicketAgent,
   type ApiAgentAdapter,
   type BoardAgentAdapter,
+  type LocalShellAgentAdapter,
 } from "./runtime";
 
 function adapter(): BoardAgentAdapter {
@@ -97,6 +98,31 @@ describe("ticket agent", () => {
     ).rejects.toThrow("subtask");
     await deploy.execute("child", { unitId: "hello", ticketId: "child" });
     expect(apis.deployApiUnit).toHaveBeenCalledWith("hello", "child");
+  });
+
+  it("only exposes local command tools when a shell is configured", async () => {
+    const withoutShell = createTicketAgent({
+      rootId: "root",
+      settings,
+      board: adapter(),
+    });
+    expect(
+      withoutShell.agent.state.tools.map((tool) => tool.name),
+    ).not.toContain("run_local_command");
+    const shell: LocalShellAgentAdapter = {
+      run: vi.fn(async () => ({ output: "ok", exitCode: 0, durationMs: 1 })),
+    };
+    const withShell = createTicketAgent({
+      rootId: "root",
+      settings,
+      board: adapter(),
+      shell,
+    });
+    const run = withShell.agent.state.tools.find(
+      (tool) => tool.name === "run_local_command",
+    )!;
+    await run.execute("command", { command: "pwd", timeoutSeconds: 5 });
+    expect(shell.run).toHaveBeenCalledWith("pwd", { timeoutMs: 5000 });
   });
 
   it("exposes scoped ticket data as durable agent working context", async () => {
