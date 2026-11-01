@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "conclave-workspace",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-10-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preserve_file_names": true,
+  "rules": [
+    { "type": "Text", "globs": ["**/*.snapshot.txt"], "fallthrough": true },
+  ],
+  "build": { "command": "node scripts/deploy/snapshot.mjs" },
+  "version_metadata": { "binding": "VERSION" },
+  "vars": {
+    "WORKER_ROLE": "workspace",
+  },
+  "observability": { "enabled": true },
+}

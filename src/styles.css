@@ -194,6 +194,7 @@ select:focus-visible {
   color: #252522;
   font-weight: 650;
   font-size: 12px;
+  text-decoration: none;
 }
 .primary:hover {
   filter: brightness(0.96);
@@ -585,7 +586,7 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--outline);
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  background: var(--surface);
 }
 .drawer-header h2 {
   margin: 0;
@@ -594,6 +595,11 @@ textarea {
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 .drawer-content {
   padding: 18px 16px 30px;
@@ -652,18 +658,21 @@ textarea {
   color: var(--quiet);
   font-size: 8px;
 }
-.ticket-progress article {
+.ticket-comments {
+  margin-top: 12px;
+}
+.ticket-comments article {
   display: grid;
   grid-template-columns: 48px 1fr;
   gap: 9px;
   padding: 7px 0;
   border-bottom: 1px solid var(--line);
 }
-.ticket-progress time {
+.ticket-comments time {
   color: var(--quiet);
   font-size: 8px;
 }
-.ticket-progress p {
+.ticket-comments p {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
@@ -701,8 +710,8 @@ textarea {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.ticket-data-form {
-  margin-top: 10px;
+.comment-form textarea {
+  min-height: 68px;
 }
 .secondary {
   min-height: 34px;
@@ -722,6 +731,114 @@ textarea {
   max-width: 700px;
   margin: 70px auto;
   padding: 24px;
+}
+
+.connection-screen {
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+}
+.connection-card {
+  width: min(430px, 100%);
+  padding: 28px;
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.connection-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--outline);
+  border-radius: 50%;
+  background: var(--green);
+}
+.connection-card .eyebrow {
+  margin: 22px 0 6px;
+  color: var(--quiet);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.connection-card h1 {
+  margin: 0;
+  font-size: 25px;
+  letter-spacing: -0.8px;
+}
+.connection-card > p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.connection-card label {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+.connection-loading {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.connection-loading svg,
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.connection-error {
+  color: #8c2e24 !important;
+}
+.notion-connection {
+  margin: 15px 0 20px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--outline);
+  border-radius: 4px;
+  background: var(--muted-surface);
+  font-size: 10px;
+}
+.notion-connection > div {
+  min-width: 0;
+  margin-right: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notion-connection strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notion-connection a,
+.notion-connection button {
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 @media (max-width: 850px) {
@@ -748,6 +865,7 @@ textarea {
   .primary.compact {
     width: 34px;
     padding: 0;
+    gap: 0;
     font-size: 0;
   }
   .board-heading {
@@ -762,6 +880,19 @@ textarea {
   .search {
     width: 155px;
   }
+  .board {
+    display: flex;
+    flex-direction: column;
+    overflow-x: visible;
+  }
+  .column {
+    min-width: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--outline);
+  }
+  .column:last-child {
+    border-bottom: 0;
+  }
   .drawer-backdrop {
     display: flex;
     align-items: flex-end;
@@ -774,7 +905,7 @@ textarea {
     border: 1px solid var(--outline);
     border-width: 1px 0 0;
     border-radius: 8px 8px 0 0;
-    box-shadow: 0 -6px 0 color-mix(in srgb, var(--accent) 65%, transparent);
+    box-shadow: none;
     transform: translateY(var(--drawer-offset));
     animation: sheet-in 0.22s ease-out;
   }

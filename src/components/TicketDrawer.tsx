@@ -3,11 +3,12 @@ import { X } from "lucide-react";
 
 interface TicketDrawerProps {
   title: string;
+  action?: React.ReactNode;
   close(): void;
   children: React.ReactNode;
 }
 
-export function TicketDrawer({ title, close, children }: TicketDrawerProps) {
+export function TicketDrawer({ title, action, close, children }: TicketDrawerProps) {
   const [offset, setOffset] = React.useState(0);
   const start = React.useRef<number | undefined>(undefined);
 
@@ -58,6 +59,8 @@ export function TicketDrawer({ title, close, children }: TicketDrawerProps) {
         </div>
         <header className="drawer-header">
           <h2>{title}</h2>
+          <div className="drawer-actions">
+            {action}
           <button
             className="icon-button"
             aria-label="Close ticket"
@@ -65,6 +68,7 @@ export function TicketDrawer({ title, close, children }: TicketDrawerProps) {
           >
             <X size={18} />
           </button>
+          </div>
         </header>
         <div className="drawer-content">{children}</div>
       </aside>

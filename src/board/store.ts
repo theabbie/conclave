@@ -24,7 +24,7 @@ export interface Ticket {
   data: Record<string, string>;
 }
 
-export interface Progress {
+export interface TicketComment {
   id: string;
   ticketId: string;
   message: string;
@@ -45,12 +45,11 @@ export type BoardEvent = TicketStatusEvent | DeploymentStatusEvent;
 
 export interface BoardState {
   tickets: Ticket[];
-  progress: Progress[];
+  comments: TicketComment[];
   deployments?: DeploymentTask[];
 }
 
-type BoardStorage = Pick<Storage, "getItem" | "setItem">;
-const storageKey = "conclave.board.v1";
+export type BoardSaver = (state: BoardState) => Promise<void>;
 
 function requiredText(value: string, name: string): string {
   if (typeof value !== "string" || !value.trim())
@@ -68,25 +67,24 @@ function freeze(state: BoardState): BoardState {
     Object.freeze(ticket.data);
     Object.freeze(ticket);
   });
-  state.progress.forEach(Object.freeze);
+  state.comments.forEach(Object.freeze);
   Object.freeze(state.tickets);
-  Object.freeze(state.progress);
+  Object.freeze(state.comments);
   state.deployments?.forEach(Object.freeze);
   if (state.deployments) Object.freeze(state.deployments);
   return Object.freeze(state);
 }
 
-function parseState(value: string): BoardState {
-  const state: unknown = JSON.parse(value);
+export function parseBoardState(state: unknown): BoardState {
   if (
     !state ||
     typeof state !== "object" ||
     !("tickets" in state) ||
-    !("progress" in state)
+    !("comments" in state)
   )
     throw new Error("Invalid saved board");
-  const { tickets, progress } = state;
-  if (!Array.isArray(tickets) || !Array.isArray(progress))
+  const { tickets, comments } = state;
+  if (!Array.isArray(tickets) || !Array.isArray(comments))
     throw new Error("Invalid saved board");
   const ids = new Set<string>();
   for (const ticket of tickets) {
@@ -132,20 +130,20 @@ function parseState(value: string): BoardState {
       )?.parentId;
     }
   }
-  const progressIds = new Set<string>();
-  for (const entry of progress) {
+  const commentIds = new Set<string>();
+  for (const entry of comments) {
     if (
       !entry ||
       typeof entry.id !== "string" ||
       !entry.id ||
-      progressIds.has(entry.id) ||
+      commentIds.has(entry.id) ||
       !ids.has(entry.ticketId) ||
       typeof entry.message !== "string" ||
       !entry.message.trim() ||
       !Number.isFinite(entry.createdAt)
     )
-      throw new Error("Invalid saved progress");
-    progressIds.add(entry.id);
+      throw new Error("Invalid saved comment");
+    commentIds.add(entry.id);
   }
   const deployments = "deployments" in state ? state.deployments : [];
   if (!Array.isArray(deployments)) throw new Error("Invalid saved deployments");
@@ -161,7 +159,7 @@ function parseState(value: string): BoardState {
   }
   return {
     tickets: tickets.map((ticket) => ({ ...ticket, data: ticket.data ?? {} })),
-    progress,
+    comments,
     deployments,
   };
 }
@@ -170,10 +168,14 @@ export class BoardStore {
   private state: BoardState;
   private listeners = new Set<() => void>();
   private eventListeners = new Set<(event: BoardEvent) => void>();
+  private errorListeners = new Set<(error: Error) => void>();
+  private saves = Promise.resolve();
 
-  constructor(private storage?: BoardStorage) {
-    const saved = storage?.getItem(storageKey);
-    const state = saved ? parseState(saved) : { tickets: [], progress: [] };
+  constructor(
+    initialState: BoardState = { tickets: [], comments: [], deployments: [] },
+    private save?: BoardSaver,
+  ) {
+    const state = parseBoardState(initialState);
     const externallyRunning = new Set(
       (state.deployments ?? [])
         .filter(
@@ -193,8 +195,8 @@ export class BoardStore {
           ? { ...ticket, status: "backlog" }
           : { ...ticket, data: { ...ticket.data } },
       ),
-      progress: [
-        ...state.progress,
+      comments: [
+        ...state.comments,
         ...interrupted.map((ticket) => ({
           id: crypto.randomUUID(),
           ticketId: ticket.id,
@@ -204,8 +206,7 @@ export class BoardStore {
         })),
       ],
     });
-    if (interrupted.length)
-      storage?.setItem(storageKey, JSON.stringify(this.state));
+    if (interrupted.length) this.persist(this.state);
   }
 
   getSnapshot = (): BoardState => this.state;
@@ -223,6 +224,24 @@ export class BoardStore {
       this.eventListeners.delete(listener);
     };
   };
+
+  subscribeErrors = (listener: (error: Error) => void): (() => void) => {
+    this.errorListeners.add(listener);
+    return () => {
+      this.errorListeners.delete(listener);
+    };
+  };
+
+  whenSaved = (): Promise<void> => this.saves;
+
+  private persist(state: BoardState): void {
+    if (!this.save) return;
+    const operation = this.saves.then(() => this.save?.(state));
+    this.saves = operation.catch((error: unknown) => {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      this.errorListeners.forEach((listener) => listener(failure));
+    });
+  }
 
   private emit(event: BoardEvent): void {
     this.eventListeners.forEach((listener) => listener(event));
@@ -246,9 +265,9 @@ export class BoardStore {
   }
 
   private commit(state: BoardState): void {
-    this.storage?.setItem(storageKey, JSON.stringify(state));
     this.state = freeze(state);
     this.listeners.forEach((listener) => listener());
+    this.persist(this.state);
   }
 
   private ticket(id: string): Ticket {
@@ -307,6 +326,38 @@ export class BoardStore {
     return { ...ticket, data: { ...ticket.data } };
   }
 
+  updateTicket(id: string, title: string, description: string): Ticket {
+    const previous = this.ticket(id);
+    if (typeof description !== "string")
+      throw new Error("Description must be text");
+    const ticket = {
+      ...previous,
+      title: requiredText(title, "Title"),
+      description: description.trim(),
+    };
+    if (
+      ticket.title === previous.title &&
+      ticket.description === previous.description
+    )
+      return { ...ticket, data: { ...ticket.data } };
+    this.commit({
+      ...this.state,
+      tickets: this.state.tickets.map((candidate) =>
+        candidate.id === id ? ticket : candidate,
+      ),
+      comments: [
+        ...this.state.comments,
+        {
+          id: crypto.randomUUID(),
+          ticketId: id,
+          message: "Ticket title or description was updated.",
+          createdAt: Date.now(),
+        },
+      ],
+    });
+    return { ...ticket, data: { ...ticket.data } };
+  }
+
   setTicketData(ticketId: string, key: string, value: string): Ticket {
     const previous = this.ticket(ticketId);
     const normalizedKey = requiredText(key, "Data key");
@@ -359,9 +410,9 @@ export class BoardStore {
       tickets: this.state.tickets.map((candidate) =>
         candidate.id === id ? ticket : candidate,
       ),
-      progress: message
+      comments: message
         ? [
-            ...this.state.progress,
+            ...this.state.comments,
             {
               id: crypto.randomUUID(),
               ticketId: id,
@@ -369,21 +420,21 @@ export class BoardStore {
               createdAt: Date.now(),
             },
           ]
-        : this.state.progress,
+        : this.state.comments,
     });
     this.statusEvent(previous, ticket, "agent");
     return { ...ticket };
   }
 
-  addProgress(ticketId: string, message: string): Progress {
+  addComment(ticketId: string, message: string): TicketComment {
     this.ticket(ticketId);
     const entry = {
       id: crypto.randomUUID(),
       ticketId,
-      message: requiredText(message, "Progress message"),
+      message: requiredText(message, "Comment"),
       createdAt: Date.now(),
     };
-    this.commit({ ...this.state, progress: [...this.state.progress, entry] });
+    this.commit({ ...this.state, comments: [...this.state.comments, entry] });
     return { ...entry };
   }
 
@@ -448,8 +499,8 @@ export class BoardStore {
       deployments: deployments.map((item) =>
         item.id === updated.id ? updated : item,
       ),
-      progress: [
-        ...this.state.progress,
+      comments: [
+        ...this.state.comments,
         {
           id: crypto.randomUUID(),
           ticketId: ticket.id,

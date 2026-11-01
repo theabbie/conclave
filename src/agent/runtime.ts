@@ -17,7 +17,7 @@ export interface BoardAgentAdapter {
   readTicket(id: string): unknown;
   createSubtask(parentId: string, title: string, description: string): unknown;
   updateSubtask(id: string, status: SubtaskStatus, summary?: string): unknown;
-  addProgress(ticketId: string, message: string): unknown;
+  addComment(ticketId: string, message: string): unknown;
   setTicketData(ticketId: string, key: string, value: string): unknown;
   deleteTicketData(ticketId: string, key: string): unknown;
   isInScope(rootId: string, ticketId: string): boolean;
@@ -130,17 +130,17 @@ export function createTicketAgent({
       },
     }),
     defineTool({
-      name: "add_progress",
-      label: "Add progress",
+      name: "add_comment",
+      label: "Add comment",
       description:
-        "Record progress, findings, blockers, or a result on the active ticket or its subtasks.",
+        "Add a chronological update, finding, blocker, or result to a ticket comment stream.",
       parameters: Type.Object({
         ticketId: Type.String(),
         message: Type.String({ minLength: 1 }),
       }),
       execute: async (_, args) => {
         assertScope(args.ticketId);
-        return result(await board.addProgress(args.ticketId, args.message));
+        return result(await board.addComment(args.ticketId, args.message));
       },
     }),
     defineTool({
@@ -253,7 +253,7 @@ export function createTicketAgent({
     initialState: {
       model,
       tools,
-      systemPrompt: `Work on ticket ${rootId}. Read it first, including its ticket data. Use ticket data for durable working context and progress for the chronological log. Use board tools to track meaningful progress and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. Deployment is asynchronous; status events are authoritative. Do not claim work you have not performed. Explicitly report when a task needs unavailable capabilities. Finish with a concise result for user review.`,
+      systemPrompt: `Work on ticket ${rootId}. Read it first, including its ticket data and comments. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. Deployment is asynchronous; status events are authoritative. Do not claim work you have not performed. Explicitly report when a task needs unavailable capabilities. Finish with a concise result for user review.`,
     },
     streamFn: createWebiomeTransport(settings),
     toolExecution: "sequential",
@@ -297,7 +297,7 @@ export function createTicketAgent({
           throw new Error("Agent run stopped");
         if (limitReached && last?.role === "toolResult")
           throw new Error(
-            `Agent paused after ${maxTurns} turns; review progress before continuing`,
+            `Agent paused after ${maxTurns} turns; review the comments before continuing`,
           );
       } finally {
         acceptingEvents = false;

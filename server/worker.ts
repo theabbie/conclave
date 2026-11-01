@@ -7,9 +7,20 @@ import {
   stageRelease,
   type ReleaseEnvironment,
 } from "./releases";
+import {
+  notionCallback,
+  notionPages,
+  notionReadBoard,
+  notionSetup,
+  notionStart,
+  notionStatus,
+  notionWriteBoard,
+  type NotionEnvironment,
+} from "./notion";
+import { streamLlm } from "./llm";
 
 const allowedOrigin = "https://theabbie.github.io";
-const allowedMethods = ["GET", "HEAD", "POST", "OPTIONS"];
+const allowedMethods = ["GET", "HEAD", "POST", "PUT", "OPTIONS"];
 const allowedHeaders = ["authorization", "content-type"];
 
 function withCors(request: Request, response: Response): Response {
@@ -32,7 +43,7 @@ function withCors(request: Request, response: Response): Response {
 
 async function route(
   request: Request,
-  env: ReleaseEnvironment,
+  env: ReleaseEnvironment & NotionEnvironment,
 ): Promise<Response> {
   if (request.method === "OPTIONS") {
     const origin = request.headers.get("Origin");
@@ -67,9 +78,44 @@ async function route(
 
   const path = new URL(request.url).pathname;
 
+  if (path === "/api/stream" && request.method === "POST")
+    return streamLlm(request);
+
+  if (path === "/api/integrations/notion/start" && request.method === "GET")
+    return notionStart(env);
+  if (path === "/api/integrations/notion/callback" && request.method === "GET")
+    return notionCallback(request, env);
+  if (path === "/api/integrations/notion/status" && request.method === "GET")
+    return notionStatus(request, env);
+  if (path === "/api/integrations/notion/pages" && request.method === "GET")
+    return notionPages(request, env);
+  if (path === "/api/integrations/notion/setup" && request.method === "POST")
+    return notionSetup(request, env);
+  if (path === "/api/board" && ["GET", "HEAD"].includes(request.method))
+    return notionReadBoard(request, env);
+  if (path === "/api/board" && request.method === "PUT")
+    return notionWriteBoard(request, env);
+
   if (path === "/api/source" || path.startsWith("/api/releases")) {
     await authorize(request, env);
     if (path === "/api/source" && ["GET", "HEAD"].includes(request.method)) {
+      if (env.WORKER_ROLE !== "workspace") {
+        if (!env.WORKSPACE_URL || !env.WORKSPACE_SOURCE_TOKEN)
+          throw new HttpError(503, "Workspace source access is not configured");
+        const response = await fetch(`${env.WORKSPACE_URL}/api/source`, {
+          headers: { Authorization: `Bearer ${env.WORKSPACE_SOURCE_TOKEN}` },
+        });
+        if (!response.ok)
+          throw new HttpError(502, "Workspace source could not be fetched");
+        return new Response(request.method === "HEAD" ? null : response.body, {
+          status: response.status,
+          headers: {
+            "Content-Type":
+              response.headers.get("Content-Type") ?? "application/json",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
       return Response.json(
         {
           versionId: env.VERSION?.id ?? null,
@@ -100,7 +146,7 @@ async function route(
 export default {
   async fetch(
     request: Request,
-    env: ReleaseEnvironment = {},
+    env: ReleaseEnvironment & NotionEnvironment = {},
   ): Promise<Response> {
     try {
       return withCors(request, await route(request, env));

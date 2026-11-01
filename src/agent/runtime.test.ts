@@ -11,7 +11,7 @@ function adapter(): BoardAgentAdapter {
     readTicket: vi.fn(() => ({ id: "root" })),
     createSubtask: vi.fn(),
     updateSubtask: vi.fn(),
-    addProgress: vi.fn(),
+    addComment: vi.fn(),
     setTicketData: vi.fn(),
     deleteTicketData: vi.fn(),
     isInScope: (root, id) => root === id || id === "child",

@@ -13,7 +13,9 @@
   "version_metadata": { "binding": "VERSION" },
   "vars": {
     "CLOUDFLARE_ACCOUNT_ID": "e740966782f2431c7fa74738e754d871",
-    "WORKER_NAME": "conclave",
+    "WORKER_NAME": "conclave-workspace",
+    "WORKER_ROLE": "main",
+    "WORKSPACE_URL": "https://conclave-workspace.abbie.workers.dev",
   },
   "observability": { "enabled": true },
 }

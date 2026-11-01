@@ -3,6 +3,9 @@ export interface ReleaseEnvironment {
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   WORKER_NAME?: string;
+  WORKER_ROLE?: string;
+  WORKSPACE_URL?: string;
+  WORKSPACE_SOURCE_TOKEN?: string;
   VERSION?: { id: string };
 }
 

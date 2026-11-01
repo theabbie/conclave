@@ -18,11 +18,11 @@ import {
   GripVertical,
   LoaderCircle,
   Orbit,
+  Pencil,
   Plus,
   Search,
   Settings2,
   Square,
-  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -109,14 +109,29 @@ function TicketCard({
   );
 }
 
-export function App({ store }: { store: BoardStore }) {
+interface NotionConnection {
+  workspaceName: string;
+  boardUrl: string | null;
+  disconnect(): void;
+}
+
+export function App({
+  store,
+  notion,
+  persistenceError,
+}: {
+  store: BoardStore;
+  notion: NotionConnection;
+  persistenceError?: string;
+}) {
   const board = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string>();
+  const [editingTicket, setEditingTicket] = useState(false);
   const [configuring, setConfiguring] = useState(false);
   const [settings, setSettings] = useState<ConnectionSettings>({
-    endpoint: "https://webiome.abbie.workers.dev/api/stream",
+    endpoint: "https://conclave.abbie.workers.dev/api/stream",
     model: "google/gemini-2.5-flash",
     token: "",
     deployEndpoint: "https://conclave.abbie.workers.dev",
@@ -129,6 +144,10 @@ export function App({ store }: { store: BoardStore }) {
   const runtimeRef = React.useRef<
     ReturnType<typeof createTicketAgent> | undefined
   >(undefined);
+
+  React.useEffect(() => {
+    if (persistenceError) setNotice(`Notion save failed: ${persistenceError}`);
+  }, [persistenceError]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -242,7 +261,7 @@ export function App({ store }: { store: BoardStore }) {
       });
       runtimeRef.current = runtime;
       store.moveTicket(target.id, "in_progress");
-      store.addProgress(target.id, "Agent started.");
+      store.addComment(target.id, "Agent started.");
       setRunning({
         id: target.id,
         abort: () => {
@@ -262,10 +281,10 @@ export function App({ store }: { store: BoardStore }) {
           .filter((part) => part.type === "text")
           .map((part) => part.text)
           .join("\n");
-        if (summary) store.addProgress(target.id, summary);
+        if (summary) store.addComment(target.id, summary);
       }
       store.moveTicket(target.id, stopped ? "ready" : "review");
-      store.addProgress(
+      store.addComment(
         target.id,
         stopped
           ? "Run stopped by you."
@@ -279,7 +298,7 @@ export function App({ store }: { store: BoardStore }) {
           : String(error);
       attempt(() => {
         store.moveTicket(target.id, "ready");
-        store.addProgress(target.id, message);
+        store.addComment(target.id, message);
       });
       setNotice(message);
     } finally {
@@ -443,7 +462,10 @@ export function App({ store }: { store: BoardStore }) {
                               (parent) => parent.id === item.parentId,
                             )?.title
                           }
-                          select={() => setSelected(item.id)}
+                          select={() => {
+                            setEditingTicket(false);
+                            setSelected(item.id);
+                          }}
                         />
                       ))}
                       {!tickets.length && (
@@ -488,7 +510,7 @@ export function App({ store }: { store: BoardStore }) {
               />
             </label>
             <label>
-              Direction
+              Description
               <textarea
                 name="description"
                 placeholder="Context, constraints, and definition of done"
@@ -513,6 +535,20 @@ export function App({ store }: { store: BoardStore }) {
             Agent sessions remain in working memory. Deployment credentials stay
             in this browser session.
           </p>
+          <div className="notion-connection">
+            <div>
+              <span className="muted">Notion workspace</span>
+              <strong>{notion.workspaceName}</strong>
+            </div>
+            {notion.boardUrl && (
+              <a href={notion.boardUrl} target="_blank" rel="noreferrer">
+                Open board <ArrowUpRight size={14} />
+              </a>
+            )}
+            <button type="button" onClick={notion.disconnect}>
+              Disconnect
+            </button>
+          </div>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -593,10 +629,53 @@ export function App({ store }: { store: BoardStore }) {
       )}
 
       {ticket && (
-        <TicketDrawer title={ticket.title} close={() => setSelected(undefined)}>
-          <p className="ticket-description">
-            {ticket.description || "No direction added."}
-          </p>
+        <TicketDrawer
+          title={ticket.title}
+          action={
+            <button
+              className="icon-button"
+              aria-label="Edit ticket"
+              onClick={() => setEditingTicket((value) => !value)}
+            >
+              <Pencil size={15} />
+            </button>
+          }
+          close={() => {
+            setEditingTicket(false);
+            setSelected(undefined);
+          }}
+        >
+          {editingTicket ? (
+            <form
+              className="ticket-edit-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                attempt(() => {
+                  store.updateTicket(
+                    ticket.id,
+                    String(data.get("title")),
+                    String(data.get("description")),
+                  );
+                  setEditingTicket(false);
+                });
+              }}
+            >
+              <label>
+                Title
+                <input name="title" required maxLength={200} defaultValue={ticket.title} />
+              </label>
+              <label>
+                Description
+                <textarea name="description" rows={5} defaultValue={ticket.description} />
+              </label>
+              <button className="secondary full" type="submit">Save ticket</button>
+            </form>
+          ) : (
+            <p className="ticket-description">
+              {ticket.description || "No description added."}
+            </p>
+          )}
           <label className="field-label">
             Status
             <span className="select-control">
@@ -639,7 +718,10 @@ export function App({ store }: { store: BoardStore }) {
               <button
                 className="subtask"
                 key={child.id}
-                onClick={() => setSelected(child.id)}
+                onClick={() => {
+                  setEditingTicket(false);
+                  setSelected(child.id);
+                }}
               >
                 {child.status === "done" ? (
                   <Check size={14} />
@@ -658,70 +740,45 @@ export function App({ store }: { store: BoardStore }) {
             </p>
           )}
           <h3 className="detail-heading">
-            Working data <span>{Object.keys(ticket.data).length}</span>
+            Agent data <span>{Object.keys(ticket.data).length}</span>
           </h3>
           <div className="ticket-data">
             {Object.entries(ticket.data).map(([key, value]) => (
               <article key={key}>
                 <header>
                   <strong>{key}</strong>
-                  <button
-                    className="icon-button small"
-                    aria-label={`Delete ${key}`}
-                    onClick={() =>
-                      attempt(() => store.deleteTicketData(ticket.id, key))
-                    }
-                  >
-                    <Trash2 size={13} />
-                  </button>
                 </header>
                 <pre>{value}</pre>
               </article>
             ))}
             {!Object.keys(ticket.data).length && (
-              <p className="muted">Shared working context will appear here.</p>
+              <p className="muted">Agent key-value context will appear here.</p>
             )}
           </div>
+          <h3 className="detail-heading">Comments</h3>
           <form
-            className="ticket-data-form"
+            className="comment-form"
             onSubmit={(event) => {
               event.preventDefault();
               const data = new FormData(event.currentTarget);
               attempt(() =>
-                store.setTicketData(
-                  ticket.id,
-                  String(data.get("key")),
-                  String(data.get("value")),
-                ),
+                store.addComment(ticket.id, String(data.get("comment"))),
               );
               event.currentTarget.reset();
             }}
           >
-            <label>
-              Key
-              <input
-                name="key"
-                required
-                maxLength={64}
-                placeholder="research"
-              />
-            </label>
-            <label>
-              Value
-              <textarea
-                name="value"
-                maxLength={20000}
-                rows={3}
-                placeholder="Ticket-specific context"
-              />
-            </label>
+            <textarea
+              name="comment"
+              rows={3}
+              required
+              placeholder="Add context or a note for the agent"
+            />
             <button className="secondary full" type="submit">
-              Save data
+              Add comment
             </button>
           </form>
-          <h3 className="detail-heading">Progress</h3>
-          <div className="ticket-progress">
-            {board.progress
+          <div className="ticket-comments">
+            {board.comments
               .filter((item) => item.ticketId === ticket.id)
               .map((item) => (
                 <article key={item.id}>
@@ -734,8 +791,8 @@ export function App({ store }: { store: BoardStore }) {
                   <p>{item.message}</p>
                 </article>
               ))}
-            {!board.progress.some((item) => item.ticketId === ticket.id) && (
-              <p className="muted">No progress recorded yet.</p>
+            {!board.comments.some((item) => item.ticketId === ticket.id) && (
+              <p className="muted">No comments yet.</p>
             )}
           </div>
         </TicketDrawer>

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BoardStore } from "./store";
+import { BoardStore, type BoardState } from "./store";
 
-function memoryStorage() {
-  const values = new Map<string, string>();
+function memoryPersistence() {
+  let state: BoardState = { tickets: [], comments: [], deployments: [] };
   return {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      values.set(key, value);
+    load: () => structuredClone(state),
+    save: async (next: BoardState) => {
+      state = structuredClone(next);
     },
   };
 }
@@ -45,66 +45,86 @@ describe("BoardStore", () => {
     );
     board.updateSubtask(child.id, "done", "Implemented");
     expect(board.readTicket(child.id).status).toBe("done");
-    expect(board.getSnapshot().progress[0].message).toBe("Implemented");
+    expect(board.getSnapshot().comments[0].message).toBe("Implemented");
   });
 
-  it("restores saved data and makes interrupted runs require explicit restart", () => {
-    const storage = memoryStorage();
-    const board = new BoardStore(storage);
+  it("updates ticket metadata and records it in the shared comment stream", () => {
+    const board = new BoardStore();
+    const ticket = board.createTicket("Draft", "Old description");
+    board.updateTicket(ticket.id, "Final", "New description");
+    expect(board.readTicket(ticket.id)).toMatchObject({
+      title: "Final",
+      description: "New description",
+    });
+    expect(board.getSnapshot().comments).toMatchObject([
+      { ticketId: ticket.id, message: "Ticket title or description was updated." },
+    ]);
+  });
+
+  it("restores saved data and makes interrupted runs require explicit restart", async () => {
+    const persistence = memoryPersistence();
+    const board = new BoardStore(persistence.load(), persistence.save);
     const ticket = board.createTicket("Task", "");
     board.moveTicket(ticket.id, "in_progress");
-    const restored = new BoardStore(storage);
+    await board.whenSaved();
+    const restored = new BoardStore(persistence.load(), persistence.save);
     expect(restored.readTicket(ticket.id).status).toBe("backlog");
-    expect(restored.getSnapshot().progress).toHaveLength(1);
-    expect(new BoardStore(storage).getSnapshot().progress).toHaveLength(1);
+    expect(restored.getSnapshot().comments).toHaveLength(1);
+    await restored.whenSaved();
+    expect(
+      new BoardStore(persistence.load()).getSnapshot().comments,
+    ).toHaveLength(1);
   });
 
-  it("persists isolated ticket data and returns defensive copies", () => {
-    const storage = memoryStorage();
-    const board = new BoardStore(storage);
+  it("persists isolated ticket data and returns defensive copies", async () => {
+    const persistence = memoryPersistence();
+    const board = new BoardStore(persistence.load(), persistence.save);
     const ticket = board.createTicket("Task", "");
     board.setTicketData(ticket.id, "research", "Verified result");
     const copy = board.readTicket(ticket.id);
     expect(copy.data).toEqual({ research: "Verified result" });
     copy.data.research = "Changed";
     expect(board.readTicket(ticket.id).data.research).toBe("Verified result");
-    expect(new BoardStore(storage).readTicket(ticket.id).data).toEqual({
+    await board.whenSaved();
+    expect(
+      new BoardStore(persistence.load()).readTicket(ticket.id).data,
+    ).toEqual({
       research: "Verified result",
     });
     board.deleteTicketData(ticket.id, "research");
     expect(board.readTicket(ticket.id).data).toEqual({});
   });
 
-  it("does not mutate state when persistence fails", () => {
-    const board = new BoardStore({
-      getItem: () => null,
-      setItem: () => {
-        throw new Error("Storage full");
-      },
+  it("reports persistence failures without losing the working state", async () => {
+    const board = new BoardStore(undefined, async () => {
+      throw new Error("Notion unavailable");
     });
-    expect(() => board.createTicket("Task", "")).toThrow("Storage full");
-    expect(board.listTickets()).toEqual([]);
+    let message = "";
+    board.subscribeErrors((error) => {
+      message = error.message;
+    });
+    board.createTicket("Task", "");
+    await board.whenSaved();
+    expect(message).toBe("Notion unavailable");
+    expect(board.listTickets()).toHaveLength(1);
   });
 
   it("rejects malformed hierarchy and invalid input without partial changes", () => {
-    const storage = memoryStorage();
-    storage.setItem(
-      "conclave.board.v1",
-      JSON.stringify({
-        tickets: [
-          {
-            id: "a",
-            parentId: "a",
-            title: "Cycle",
-            description: "",
-            status: "backlog",
-            createdAt: 1,
-          },
-        ],
-        progress: [],
-      }),
-    );
-    expect(() => new BoardStore(storage)).toThrow("Invalid ticket hierarchy");
+    const malformed = {
+      tickets: [
+        {
+          id: "a",
+          parentId: "a",
+          title: "Cycle",
+          description: "",
+          status: "backlog",
+          createdAt: 1,
+          data: {},
+        },
+      ],
+      comments: [],
+    } as BoardState;
+    expect(() => new BoardStore(malformed)).toThrow("Invalid ticket hierarchy");
     const board = new BoardStore();
     expect(() => board.createTicket(" ", "")).toThrow("Title is required");
     const ticket = board.createTicket("Root", "");
@@ -198,15 +218,15 @@ describe("deployment events", () => {
       error: "Build rejected",
     });
     expect(board.readTicket(subtask.id).status).toBe("review");
-    expect(board.getSnapshot().progress.at(-1)?.message).toContain(
+    expect(board.getSnapshot().comments.at(-1)?.message).toContain(
       "Build rejected",
     );
   });
 });
 
-it("keeps external deployments active across reload without persisting an agent session", () => {
-  const storage = memoryStorage();
-  const board = new BoardStore(storage);
+it("keeps external deployments active across reload without persisting an agent session", async () => {
+  const persistence = memoryPersistence();
+  const board = new BoardStore(persistence.load(), persistence.save);
   const root = board.createTicket("Root", "");
   const child = board.createSubtask(root.id, "Deploy", "");
   board.linkDeployment({
@@ -224,7 +244,8 @@ it("keeps external deployments active across reload without persisting an agent 
     status: "in_progress",
     occurredAt: 2,
   });
-  const restored = new BoardStore(storage);
+  await board.whenSaved();
+  const restored = new BoardStore(persistence.load(), persistence.save);
   expect(restored.readTicket(child.id).status).toBe("in_progress");
   restored.handleExternalEvent({
     type: "deployment.status_changed",

@@ -20,7 +20,11 @@ describe("Worker access boundary", () => {
   });
 
   it("returns current source only to the owner", async () => {
-    const env = { CONCLAVE_DEPLOY_TOKEN: "owner", VERSION: { id: "version" } };
+    const env = {
+      CONCLAVE_DEPLOY_TOKEN: "owner",
+      WORKER_ROLE: "workspace",
+      VERSION: { id: "version" },
+    };
     const unauthorized = await worker.fetch(
       new Request("https://conclave.test/api/source"),
       env,
