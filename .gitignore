@@ -1,0 +1,9 @@
+node_modules/
+dist/
+docs/
+.wrangler/
+.dev.vars
+.env*
+.playwright-cli/
+
+server/generated/source.snapshot.txt

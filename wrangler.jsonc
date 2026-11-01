@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "conclave",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-10-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preserve_file_names": true,
+  "rules": [
+    { "type": "Text", "globs": ["**/*.snapshot.txt"], "fallthrough": true },
+  ],
+  "build": { "command": "node scripts/deploy/snapshot.mjs" },
+  "version_metadata": { "binding": "VERSION" },
+  "vars": {
+    "CLOUDFLARE_ACCOUNT_ID": "e740966782f2431c7fa74738e754d871",
+    "WORKER_NAME": "conclave",
+  },
+  "observability": { "enabled": true },
+}

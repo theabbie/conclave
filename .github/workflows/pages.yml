@@ -1,0 +1,40 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: conclave-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: conclave-pages-${{ github.sha }}
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run pages:build
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+      - name: Wait for stale deployment lock
+        run: |
+          remaining=$((1793527080 - $(date +%s)))
+          if [ "$remaining" -gt 0 ]; then sleep "$remaining"; fi
+      - id: deployment
+        uses: actions/deploy-pages@v5
