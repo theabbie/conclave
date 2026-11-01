@@ -74,7 +74,7 @@ describe("BoardStore", () => {
     board.subscribeEvents((event) => events.push(event));
     board.addComment(ticket.id, "New requirement", "user");
     expect(board.readTicket(ticket.id).comments).toMatchObject([
-      { message: "New requirement" },
+      { message: "New requirement", attention: false },
     ]);
     expect(events).toMatchObject([
       {
@@ -84,6 +84,11 @@ describe("BoardStore", () => {
         source: "user",
       },
     ]);
+    board.addComment(ticket.id, "Approval required", "agent", true);
+    expect(board.readTicket(ticket.id).comments.at(-1)).toMatchObject({
+      message: "Approval required",
+      attention: true,
+    });
   });
 
   it("deletes only backlog tickets and removes their complete subtree", () => {

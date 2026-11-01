@@ -29,6 +29,7 @@ export interface TicketComment {
   ticketId: string;
   message: string;
   createdAt: number;
+  attention: boolean;
 }
 
 export interface TicketStatusEvent {
@@ -46,6 +47,7 @@ export interface CommentAddedEvent {
   id: string;
   ticketId: string;
   message: string;
+  attention: boolean;
   source: "user" | "agent" | "system";
   occurredAt: number;
 }
@@ -150,6 +152,7 @@ export function parseBoardState(state: unknown): BoardState {
       !ids.has(entry.ticketId) ||
       typeof entry.message !== "string" ||
       !entry.message.trim() ||
+      (entry.attention !== undefined && typeof entry.attention !== "boolean") ||
       !Number.isFinite(entry.createdAt)
     )
       throw new Error("Invalid saved comment");
@@ -169,7 +172,10 @@ export function parseBoardState(state: unknown): BoardState {
   }
   return {
     tickets: tickets.map((ticket) => ({ ...ticket, data: ticket.data ?? {} })),
-    comments,
+    comments: comments.map((comment) => ({
+      ...comment,
+      attention: comment.attention ?? false,
+    })),
     deployments,
   };
 }
@@ -213,6 +219,7 @@ export class BoardStore {
           message:
             "Run interrupted when the page closed. Move this ticket to Ready to start again.",
           createdAt: Date.now(),
+          attention: false,
         })),
       ],
     });
@@ -378,6 +385,7 @@ export class BoardStore {
       ticketId: id,
       message: "Ticket title or description was updated.",
       createdAt: Date.now(),
+      attention: false,
     };
     this.commit({
       ...this.state,
@@ -391,6 +399,7 @@ export class BoardStore {
       id: crypto.randomUUID(),
       ticketId: id,
       message: entry.message,
+      attention: entry.attention,
       source: "user",
       occurredAt: entry.createdAt,
     });
@@ -487,6 +496,7 @@ export class BoardStore {
               ticketId: id,
               message,
               createdAt: Date.now(),
+              attention: false,
             },
           ]
         : this.state.comments,
@@ -499,6 +509,7 @@ export class BoardStore {
     ticketId: string,
     message: string,
     source: CommentAddedEvent["source"] = "user",
+    attention = false,
   ): TicketComment {
     this.ticket(ticketId);
     const entry = {
@@ -506,6 +517,7 @@ export class BoardStore {
       ticketId,
       message: requiredText(message, "Comment"),
       createdAt: Date.now(),
+      attention,
     };
     this.commit({ ...this.state, comments: [...this.state.comments, entry] });
     this.emit({
@@ -513,6 +525,7 @@ export class BoardStore {
       id: crypto.randomUUID(),
       ticketId,
       message: entry.message,
+      attention: entry.attention,
       source,
       occurredAt: entry.createdAt,
     });
@@ -587,6 +600,7 @@ export class BoardStore {
           ticketId: ticket.id,
           message,
           createdAt: event.occurredAt,
+          attention: false,
         },
       ],
     });

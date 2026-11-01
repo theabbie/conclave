@@ -264,6 +264,72 @@ select:focus-visible {
   height: 27px;
 }
 
+.attention-panel {
+  margin-bottom: 14px;
+  border: 1px solid var(--outline);
+  border-radius: 5px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.attention-panel > header {
+  min-height: 38px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--outline);
+  background: color-mix(in srgb, var(--blue) 16%, var(--surface));
+}
+.attention-panel h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+}
+.attention-panel header span {
+  color: var(--quiet);
+  font-size: 9px;
+}
+.attention-list {
+  max-height: 148px;
+  overflow-y: auto;
+}
+.attention-list button {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 11px;
+  display: grid;
+  grid-template-columns: minmax(110px, 0.3fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+}
+.attention-list button:last-child {
+  border-bottom: 0;
+}
+.attention-list button:hover {
+  background: var(--raised);
+}
+.attention-list strong,
+.attention-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attention-list strong {
+  font-size: 10px;
+}
+.attention-list span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.attention-list time {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
 .board-section {
   border: 1px solid var(--outline);
   border-radius: 5px;
@@ -678,8 +744,25 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 .ticket-comments time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: var(--quiet);
   font-size: 8px;
+}
+.ticket-comments article.is-highlighted {
+  animation: comment-highlight 1s ease-out;
+}
+@keyframes comment-highlight {
+  0%,
+  45% {
+    background: color-mix(in srgb, var(--blue) 34%, var(--surface));
+    box-shadow: inset 3px 0 0 var(--blue);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 transparent;
+  }
 }
 .ticket-comments p {
   margin: 0;
@@ -909,6 +992,13 @@ textarea {
   }
   .search {
     width: 155px;
+  }
+  .attention-list button {
+    grid-template-columns: 1fr auto;
+  }
+  .attention-list button span {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
   .board {
     display: flex;

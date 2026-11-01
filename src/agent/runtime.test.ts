@@ -124,6 +124,25 @@ describe("ticket agent", () => {
     ).rejects.toThrow("outside");
   });
 
+  it("lets the agent explicitly flag only comments that need attention", async () => {
+    const board = adapter();
+    const { agent } = createTicketAgent({ rootId: "root", settings, board });
+    const addComment = agent.state.tools.find(
+      (tool) => tool.name === "add_comment",
+    )!;
+    await addComment.execute("attention", {
+      ticketId: "root",
+      message: "Approve production access",
+      attention: true,
+    });
+    expect(board.addComment).toHaveBeenCalledWith(
+      "root",
+      "Approve production access",
+      "agent",
+      true,
+    );
+  });
+
   it("rejects concurrent runs and reports explicit cancellation", async () => {
     vi.stubGlobal(
       "fetch",

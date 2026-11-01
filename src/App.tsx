@@ -14,6 +14,7 @@ import {
   Check,
   Circle,
   Columns3,
+  Flag,
   GripVertical,
   LoaderCircle,
   Orbit,
@@ -133,6 +134,7 @@ export function App({
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string>();
   const [editingTicket, setEditingTicket] = useState(false);
+  const [highlightedComment, setHighlightedComment] = useState<string>();
   const [configuring, setConfiguring] = useState(false);
   const [settings, setSettings] = useState<ConnectionSettings>({
     endpoint: "https://conclave.abbie.workers.dev/api/stream",
@@ -151,6 +153,23 @@ export function App({
   React.useEffect(() => {
     if (persistenceError) setNotice(`Notion save failed: ${persistenceError}`);
   }, [persistenceError]);
+
+  React.useEffect(() => {
+    if (!highlightedComment || !selected) return;
+    const frame = requestAnimationFrame(() => {
+      document
+        .getElementById(`comment-${highlightedComment}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    const timer = window.setTimeout(
+      () => setHighlightedComment(undefined),
+      1000,
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [highlightedComment, selected]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -179,6 +198,7 @@ export function App({
                 ticketId: event.ticketId,
                 payload: {
                   message: event.message,
+                  attention: event.attention,
                   occurredAt: event.occurredAt,
                 },
               },
@@ -213,6 +233,16 @@ export function App({
   );
 
   const roots = board.tickets.filter((item) => !item.parentId);
+  const attentionComments = board.comments
+    .filter((comment) => comment.attention)
+    .map((comment) => ({
+      comment,
+      ticket: board.tickets.find((item) => item.id === comment.ticketId),
+    }))
+    .filter((item): item is { comment: typeof item.comment; ticket: Ticket } =>
+      Boolean(item.ticket),
+    )
+    .sort((left, right) => right.comment.createdAt - left.comment.createdAt);
   const ticket = board.tickets.find((item) => item.id === selected);
   const filtered = board.tickets.filter((item) =>
     `${item.title} ${item.description}`
@@ -472,6 +502,39 @@ export function App({
               <X size={15} />
             </button>
           </div>
+        )}
+        {attentionComments.length > 0 && (
+          <section
+            className="attention-panel"
+            aria-labelledby="attention-title"
+          >
+            <header>
+              <Flag size={15} />
+              <h2 id="attention-title">Attention needed</h2>
+              <span>{attentionComments.length}</span>
+            </header>
+            <div className="attention-list">
+              {attentionComments.map(({ comment, ticket: target }) => (
+                <button
+                  key={comment.id}
+                  onClick={() => {
+                    setEditingTicket(false);
+                    setSelected(target.id);
+                    setHighlightedComment(comment.id);
+                  }}
+                >
+                  <strong>{target.title}</strong>
+                  <span>{comment.message}</span>
+                  <time>
+                    {new Date(comment.createdAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                </button>
+              ))}
+            </div>
+          </section>
         )}
         <section className="board-section" aria-labelledby="board-title">
           <header className="board-toolbar">
@@ -857,8 +920,17 @@ export function App({
             {board.comments
               .filter((item) => item.ticketId === ticket.id)
               .map((item) => (
-                <article key={item.id}>
+                <article
+                  id={`comment-${item.id}`}
+                  className={
+                    highlightedComment === item.id ? "is-highlighted" : ""
+                  }
+                  key={item.id}
+                >
                   <time>
+                    {item.attention && (
+                      <Flag size={10} aria-label="Attention needed" />
+                    )}
                     {new Date(item.createdAt).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
