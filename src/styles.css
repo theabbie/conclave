@@ -699,6 +699,124 @@ textarea {
   padding: 18px 16px 30px;
   overflow-y: auto;
 }
+.shell-terminal {
+  height: calc(100vh - 58px);
+  margin: -18px -16px -30px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #08090a;
+  color: #d7d9dc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.shell-screen {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  scrollbar-color: #3f4348 #08090a;
+}
+.shell-empty {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #858b92;
+  font-size: 11px;
+  text-align: center;
+}
+.shell-empty button {
+  padding: 6px 9px;
+  border: 1px solid #3b4046;
+  border-radius: 4px;
+  background: #15171a;
+  color: #d7d9dc;
+  font-size: 10px;
+}
+.shell-entry {
+  padding: 0 0 14px;
+}
+.shell-entry + .shell-entry {
+  padding-top: 14px;
+  border-top: 1px solid #24272b;
+}
+.shell-entry header,
+.shell-entry footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #737a82;
+  font-size: 9px;
+}
+.shell-entry header {
+  margin-bottom: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.shell-entry header time {
+  margin-left: auto;
+}
+.shell-command,
+.shell-output {
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.shell-command {
+  color: #f1f3f5;
+}
+.shell-command span {
+  color: #8fcf86;
+}
+.shell-output {
+  margin-top: 6px;
+  color: #b8bdc3;
+}
+.shell-entry footer {
+  margin-top: 7px;
+}
+.shell-entry footer.succeeded {
+  color: #7eb876;
+}
+.shell-entry footer.failed {
+  color: #d78378;
+}
+.shell-prompt {
+  min-height: 47px;
+  margin: 0;
+  padding: 7px 8px 7px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #2b2e33;
+  background: #101214;
+  color: #8fcf86;
+}
+.shell-prompt input {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: #f1f3f5;
+  font: inherit;
+  font-size: 11px;
+  outline: 0;
+}
+.shell-prompt button {
+  padding: 6px 9px;
+  border: 1px solid #3b4046;
+  border-radius: 4px;
+  background: #1d2024;
+  color: #d7d9dc;
+  font-size: 9px;
+}
 .select-control {
   position: relative;
   display: block;
@@ -1047,6 +1165,9 @@ textarea {
     box-shadow: none;
     transform: translateY(var(--drawer-offset));
     animation: sheet-in 0.22s ease-out;
+  }
+  .shell-terminal {
+    height: calc(88dvh - 82px);
   }
   .ticket-drawer.is-closing {
     transform: translateY(100%);

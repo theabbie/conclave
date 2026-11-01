@@ -7,6 +7,7 @@ export interface LocalCommandResult {
 export interface LocalCommandOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
+  onOutput?(output: string): void;
 }
 
 type SocketFactory = (url: string) => WebSocket;
@@ -106,9 +107,14 @@ export class LocalShellClient {
         const match = output.match(
           new RegExp(`\\n?${marker}=(-?\\d+)\\r?\\n?`),
         );
+        const visible = output
+          .slice(0, match?.index ?? output.length)
+          .replace(/\r\n/g, "\n")
+          .trim();
+        options.onOutput?.(visible);
         if (!match || match.index === undefined) return;
         finish(undefined, {
-          output: output.slice(0, match.index).replace(/\r\n/g, "\n").trim(),
+          output: visible,
           exitCode: Number(match[1]),
           durationMs: Math.round(performance.now() - startedAt),
         });

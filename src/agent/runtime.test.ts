@@ -109,9 +109,12 @@ describe("ticket agent", () => {
     expect(
       withoutShell.agent.state.tools.map((tool) => tool.name),
     ).not.toContain("run_local_command");
-    const shell: LocalShellAgentAdapter = {
-      run: vi.fn(async () => ({ output: "ok", exitCode: 0, durationMs: 1 })),
-    };
+    const shellRun = vi.fn(async () => ({
+      output: "ok",
+      exitCode: 0,
+      durationMs: 1,
+    }));
+    const shell: LocalShellAgentAdapter = { run: shellRun };
     const withShell = createTicketAgent({
       rootId: "root",
       settings,
@@ -123,6 +126,14 @@ describe("ticket agent", () => {
     )!;
     await run.execute("command", { command: "pwd", timeoutSeconds: 5 });
     expect(shell.run).toHaveBeenCalledWith("pwd", { timeoutMs: 5000 });
+    shellRun.mockResolvedValueOnce({
+      output: "syntax error",
+      exitCode: 2,
+      durationMs: 1,
+    });
+    await expect(
+      run.execute("failed", { command: "bad command", timeoutSeconds: 5 }),
+    ).rejects.toThrow("exit 2");
   });
 
   it("exposes scoped ticket data as durable agent working context", async () => {

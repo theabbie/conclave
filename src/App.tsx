@@ -31,12 +31,14 @@ import {
 import { createTicketAgent } from "./agent/runtime";
 import type { AgentSettings } from "./agent/transport";
 import { BoardStore, type Status, type Ticket } from "./board/store";
+import { LocalShellDrawer } from "./components/LocalShellDrawer";
 import { Modal } from "./components/Modal";
 import { SelectControl } from "./components/SelectControl";
 import { TicketDrawer } from "./components/TicketDrawer";
 import { ApiWorkspace } from "./deploy/api-workspace";
 import { ReleaseClient } from "./deploy/client";
-import { LocalShellClient, validateLocalShellUrl } from "./local-shell/client";
+import { validateLocalShellUrl } from "./local-shell/client";
+import { LocalShellHub } from "./local-shell/hub";
 
 const columns: { id: Status; label: string }[] = [
   { id: "backlog", label: "Backlog" },
@@ -139,6 +141,7 @@ export function App({
   const [editingTicket, setEditingTicket] = useState(false);
   const [highlightedComment, setHighlightedComment] = useState<string>();
   const [configuring, setConfiguring] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [settings, setSettings] = useState<ConnectionSettings>({
     endpoint: "https://conclave.abbie.workers.dev/api/stream",
     model: "google/gemini-2.5-flash",
@@ -151,6 +154,11 @@ export function App({
   const [tool, setTool] = useState("");
   const [testingShell, setTestingShell] = useState(false);
   const [shellTest, setShellTest] = useState("");
+  const [shellHub] = useState(() => new LocalShellHub());
+  const shellEntries = useSyncExternalStore(
+    shellHub.subscribe,
+    shellHub.getSnapshot,
+  );
   const activeRun = React.useRef<string | null>(null);
   const runtimeRef = React.useRef<
     ReturnType<typeof createTicketAgent> | undefined
@@ -159,6 +167,10 @@ export function App({
   React.useEffect(() => {
     if (persistenceError) setNotice(`Notion save failed: ${persistenceError}`);
   }, [persistenceError]);
+
+  React.useEffect(() => {
+    shellHub.configure(settings.shellUrl);
+  }, [settings.shellUrl, shellHub]);
 
   React.useEffect(() => {
     if (!highlightedComment || !selected) return;
@@ -269,10 +281,7 @@ export function App({
     setTestingShell(true);
     setShellTest("");
     try {
-      const result = await new LocalShellClient(url).run("pwd; uname -s", {
-        timeoutMs: 10_000,
-        maxOutputBytes: 16_000,
-      });
+      const result = await shellHub.test(url);
       setShellTest(
         `${result.output || "Connected"}\nExit ${result.exitCode} · ${result.durationMs} ms`,
       );
@@ -359,9 +368,7 @@ export function App({
         settings,
         board: store,
         apis,
-        ...(settings.shellUrl
-          ? { shell: new LocalShellClient(settings.shellUrl) }
-          : {}),
+        ...(shellHub.isConfigured() ? { shell: shellHub } : {}),
         onEvent: (event) => {
           if (event.type === "tool_execution_start")
             setTool(event.toolName.replaceAll("_", " "));
@@ -477,6 +484,16 @@ export function App({
               <Square size={13} /> Stop
             </button>
           )}
+          <button
+            className="icon-button"
+            aria-label="Open local shell"
+            onClick={() => {
+              setSelected(undefined);
+              setTerminalOpen(true);
+            }}
+          >
+            <Terminal size={17} />
+          </button>
           <button
             className="icon-button"
             aria-label="Connection settings"
@@ -819,6 +836,18 @@ export function App({
             </footer>
           </form>
         </Modal>
+      )}
+
+      {terminalOpen && (
+        <LocalShellDrawer
+          hub={shellHub}
+          entries={shellEntries}
+          close={() => setTerminalOpen(false)}
+          configure={() => {
+            setTerminalOpen(false);
+            setConfiguring(true);
+          }}
+        />
       )}
 
       {ticket && (

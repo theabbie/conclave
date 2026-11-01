@@ -297,8 +297,14 @@ export function createTicketAgent({
             description:
               "Confirm access to the user-configured local shell and return its working directory and operating system.",
             parameters: Type.Object({}),
-            execute: async () =>
-              result(await shell.run("pwd; uname -s; uname -m")),
+            execute: async () => {
+              const command = await shell.run("pwd; uname -s; uname -m");
+              if (command.exitCode !== 0)
+                throw new Error(
+                  `Local shell inspection failed with exit ${command.exitCode}:\n${command.output}`,
+                );
+              return result(command);
+            },
           }),
           defineTool({
             name: "run_local_command",
@@ -310,13 +316,18 @@ export function createTicketAgent({
               timeoutSeconds: Type.Optional(
                 Type.Number({ minimum: 1, maximum: 300 }),
               ),
+              allowNonZero: Type.Optional(Type.Boolean()),
             }),
-            execute: async (_, args) =>
-              result(
-                await shell.run(args.command, {
-                  timeoutMs: (args.timeoutSeconds ?? 30) * 1000,
-                }),
-              ),
+            execute: async (_, args) => {
+              const command = await shell.run(args.command, {
+                timeoutMs: (args.timeoutSeconds ?? 30) * 1000,
+              });
+              if (command.exitCode !== 0 && !args.allowNonZero)
+                throw new Error(
+                  `Local command failed with exit ${command.exitCode}:\n${command.output}`,
+                );
+              return result(command);
+            },
           }),
         ]
       : []),
@@ -337,7 +348,7 @@ export function createTicketAgent({
     initialState: {
       model,
       tools,
-      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never ask the user for access to ticket or subtask records before trying list_subtasks and read_ticket. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket and a lightweight index of its direct subtasks. Fetch subtask details on demand with read_ticket. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Set add_comment attention to true only when the user needs to notice or act on the comment, such as an approval request, a question, a blocker, or a completed result. Keep it false for routine starting, progress, and activity updates. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success.${shell ? " The configured local shell is an explicitly authorized execution environment. Inspect it with local_shell_info and use run_local_command when the ticket requires local files, programs, builds, tests, or system commands." : ""} Do not claim work you have not performed. Finish with a concise result for user review.`,
+      systemPrompt: `Work on ticket ${rootId}. The tools listed in this session are executable. Never ask the user for access to ticket or subtask records before trying list_subtasks and read_ticket. Never claim a listed tool is unavailable unless calling it returned an error. The initial prompt includes the current ticket and a lightweight index of its direct subtasks. Fetch subtask details on demand with read_ticket. While the ticket is ready, assess it before taking ownership. Move it to in progress with update_ticket_status only when you will perform work. Move it to review when asking the user a question or presenting a result. Use ticket data for durable key-value working context and comments for chronological updates shared with the user. Set add_comment attention to true only when the user needs to notice or act on the comment, such as an approval request, a question, a blocker, or a completed result. Keep it false for routine starting, progress, and activity updates. Use board tools to track meaningful work and create subtasks when helpful. Only the user creates root tickets. You may modify only this ticket's subtree. API units are atomic: read before updating, use one unit per route, and link every deployment to a subtask. A deploy_api_unit call waits for completion and returns the public URL on success.${shell ? " The configured local shell is an explicitly authorized execution environment. Inspect it with local_shell_info and use run_local_command when the ticket requires local files, programs, builds, tests, or system commands. Treat a nonzero exit as a failed verification, correct the command, and never report a result that the shell did not successfully verify." : ""} Do not claim work you have not performed. Finish with a concise result for user review.`,
     },
     streamFn: createWebiomeTransport(settings),
     toolExecution: "sequential",
