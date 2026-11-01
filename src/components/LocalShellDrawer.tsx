@@ -1,5 +1,6 @@
 import React from "react";
 import { LoaderCircle, Terminal, Trash2 } from "lucide-react";
+import { LOCAL_SHELL_COMMAND } from "../local-shell/client";
 import { LocalShellHub, type ShellCommandEntry } from "../local-shell/hub";
 import { TicketDrawer } from "./TicketDrawer";
 
@@ -43,6 +44,7 @@ export function LocalShellDrawer({
             <div className="shell-empty">
               <Terminal size={20} />
               <span>No local shell configured.</span>
+              <code className="shell-setup-command">{LOCAL_SHELL_COMMAND}</code>
               <button type="button" onClick={configure}>
                 Open connections
               </button>

@@ -735,6 +735,39 @@ textarea {
   color: #d7d9dc;
   font-size: 10px;
 }
+.shell-setup-command {
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid #2c3035;
+  border-radius: 4px;
+  background: #101214;
+  color: #b8bdc3;
+  font: inherit;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.shell-setup-hint {
+  display: grid;
+  gap: 5px;
+  white-space: normal;
+}
+.shell-setup-hint code {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--muted-surface);
+  color: var(--muted);
+  font:
+    9px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
 .shell-entry {
   padding: 0 0 14px;
 }
@@ -945,6 +978,10 @@ textarea {
 .secondary {
   min-height: 34px;
   padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   border: 1px solid var(--outline);
   border-radius: 4px;
   background: var(--green);

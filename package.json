@@ -21,7 +21,7 @@
     "@earendil-works/pi-agent-core": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "esbuild-wasm": "^0.25.11",
-    "lucide-react": "^0.468.0",
+    "lucide-react": "^1.66.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "typebox": "^1.0.0"

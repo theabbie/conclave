@@ -11,13 +11,13 @@ import {
 } from "@dnd-kit/core";
 import {
   ArrowUpRight,
+  BoxesLinked,
   Check,
   Circle,
   Columns3,
   Flag,
   GripVertical,
   LoaderCircle,
-  Orbit,
   Pencil,
   Plus,
   Search,
@@ -37,7 +37,10 @@ import { SelectControl } from "./components/SelectControl";
 import { TicketDrawer } from "./components/TicketDrawer";
 import { ApiWorkspace } from "./deploy/api-workspace";
 import { ReleaseClient } from "./deploy/client";
-import { validateLocalShellUrl } from "./local-shell/client";
+import {
+  LOCAL_SHELL_COMMAND,
+  validateLocalShellUrl,
+} from "./local-shell/client";
 import { LocalShellHub } from "./local-shell/hub";
 
 const columns: { id: Status; label: string }[] = [
@@ -466,7 +469,7 @@ export function App({
       <header className="app-header">
         <a className="brand" href="./" aria-label="Conclave home">
           <span className="brand-icon">
-            <Orbit size={18} />
+            <BoxesLinked size={18} />
           </span>
           <span>conclave</span>
         </a>
@@ -791,9 +794,10 @@ export function App({
                 placeholder="ws://127.0.0.1:8080"
                 defaultValue={settings.shellUrl}
               />
-              <span className="field-hint">
+              <span className="field-hint shell-setup-hint">
                 Enables raw commands on the connected machine. Use wss:// for
-                tunneled or public URLs.
+                tunneled or public URLs. Start a local shell with
+                <code>{LOCAL_SHELL_COMMAND}</code>
               </span>
             </label>
             <button

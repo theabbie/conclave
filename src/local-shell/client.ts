@@ -4,6 +4,9 @@ export interface LocalCommandResult {
   durationMs: number;
 }
 
+export const LOCAL_SHELL_COMMAND =
+  'websocat --text ws-l:127.0.0.1:8080 sh-c:"bash -i"';
+
 export interface LocalCommandOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
