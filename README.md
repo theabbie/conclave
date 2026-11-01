@@ -102,17 +102,17 @@ npm run server:dev
 
 Useful scripts:
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start the Vite client |
-| `npm run build` | Type-check and build the client |
-| `npm run pages:build` | Build and copy the static site into the ignored `docs/` directory |
-| `npm test` | Run all Vitest tests |
-| `npm run server:dev` | Run the main Worker locally |
-| `npm run server:deploy` | Deploy the main Conclave Worker |
-| `npm run release:prepare -- <file>` | Build a validated self-deployment release |
-| `npm run release:publish -- stage <file> <receipt>` | Stage a release |
-| `npm run release:publish -- activate <receipt>` | Activate a staged release |
+| Command                                             | Purpose                                                           |
+| --------------------------------------------------- | ----------------------------------------------------------------- |
+| `npm run dev`                                       | Start the Vite client                                             |
+| `npm run build`                                     | Type-check and build the client                                   |
+| `npm run pages:build`                               | Build and copy the static site into the ignored `docs/` directory |
+| `npm test`                                          | Run all Vitest tests                                              |
+| `npm run server:dev`                                | Run the main Worker locally                                       |
+| `npm run server:deploy`                             | Deploy the main Conclave Worker                                   |
+| `npm run release:prepare -- <file>`                 | Build a validated self-deployment release                         |
+| `npm run release:publish -- stage <file> <receipt>` | Stage a release                                                   |
+| `npm run release:publish -- activate <receipt>`     | Activate a staged release                                         |
 
 ### Worker configuration
 
@@ -128,9 +128,12 @@ NOTION_CLIENT_ID
 NOTION_CLIENT_SECRET
 NOTION_SESSION_PRIVATE_KEY
 CONCLAVE_DEPLOY_TOKEN
-CLOUDFLARE_API_TOKEN
 WORKSPACE_SOURCE_TOKEN
 ```
+
+Cloudflare release authentication additionally requires either
+`CLOUDFLARE_API_TOKEN`, or the `CLOUDFLARE_API_KEY` and
+`CLOUDFLARE_AUTH_EMAIL` pair. A narrowly scoped API token is preferred.
 
 Set secrets with Wrangler rather than committing them:
 
@@ -138,7 +141,8 @@ Set secrets with Wrangler rather than committing them:
 npx wrangler secret put NOTION_CLIENT_ID
 ```
 
-Repeat that command for each secret and for the appropriate Worker configuration. The Notion OAuth callback is:
+Repeat that command for each secret and for the appropriate Worker
+configuration. The Notion OAuth callback is:
 
 ```text
 https://conclave.abbie.workers.dev/api/integrations/notion/callback

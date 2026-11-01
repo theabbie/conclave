@@ -129,6 +129,27 @@ describe("release validation", () => {
 });
 
 describe("release lifecycle", () => {
+  it("supports Cloudflare Global API Key authentication", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        deployments: [{ versions: [{ version_id: "newer", percentage: 100 }] }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      stageRelease(request(await payload()), {
+        ...env,
+        CLOUDFLARE_API_TOKEN: undefined,
+        CLOUDFLARE_API_KEY: "global-key",
+        CLOUDFLARE_AUTH_EMAIL: "owner@example.com",
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("X-Auth-Email")).toBe("owner@example.com");
+    expect(headers.get("X-Auth-Key")).toBe("global-key");
+  });
+
   it("stages exact source and artifact without activating, then accepts its signed receipt", async () => {
     const fetchMock = vi
       .fn()

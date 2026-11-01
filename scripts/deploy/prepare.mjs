@@ -9,16 +9,19 @@ const output = process.argv[2];
 const endpoint =
   process.env.CONCLAVE_SERVER_URL ?? "https://conclave.abbie.workers.dev";
 const token = process.env.CONCLAVE_DEPLOY_TOKEN;
-if (!output || !token)
+let versionId = process.env.CONCLAVE_BASE_VERSION;
+if (!output || (!token && !versionId))
   throw new Error(
-    "Usage: CONCLAVE_DEPLOY_TOKEN=... node scripts/deploy/prepare.mjs /tmp/release.json",
+    "Usage: CONCLAVE_DEPLOY_TOKEN=... node scripts/deploy/prepare.mjs /tmp/release.json, or set CONCLAVE_BASE_VERSION",
   );
-const current = await fetch(new URL("/api/source", endpoint), {
-  headers: { Authorization: `Bearer ${token}` },
-});
-if (!current.ok)
-  throw new Error(`Could not read current source: HTTP ${current.status}`);
-const { versionId } = await current.json();
+if (!versionId) {
+  const current = await fetch(new URL("/api/source", endpoint), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!current.ok)
+    throw new Error(`Could not read current source: HTTP ${current.status}`);
+  ({ versionId } = await current.json());
+}
 if (typeof versionId !== "string")
   throw new Error("Server did not return its deployed version ID");
 const initial = await createSnapshot();

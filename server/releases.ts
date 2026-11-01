@@ -1,6 +1,8 @@
 export interface ReleaseEnvironment {
   CONCLAVE_DEPLOY_TOKEN?: string;
   CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_API_KEY?: string;
+  CLOUDFLARE_AUTH_EMAIL?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   WORKER_NAME?: string;
   WORKER_ROLE?: string;
@@ -173,8 +175,12 @@ async function cloudflare<T>(
   suffix: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const hasToken = Boolean(env.CLOUDFLARE_API_TOKEN);
+  const hasGlobalKey = Boolean(
+    env.CLOUDFLARE_API_KEY && env.CLOUDFLARE_AUTH_EMAIL,
+  );
   if (
-    !env.CLOUDFLARE_API_TOKEN ||
+    (!hasToken && !hasGlobalKey) ||
     !env.CLOUDFLARE_ACCOUNT_ID ||
     !env.WORKER_NAME
   )
@@ -183,7 +189,12 @@ async function cloudflare<T>(
       "Cloudflare release credentials are not configured",
     );
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${env.CLOUDFLARE_API_TOKEN}`);
+  if (env.CLOUDFLARE_API_TOKEN) {
+    headers.set("Authorization", `Bearer ${env.CLOUDFLARE_API_TOKEN}`);
+  } else {
+    headers.set("X-Auth-Email", env.CLOUDFLARE_AUTH_EMAIL!);
+    headers.set("X-Auth-Key", env.CLOUDFLARE_API_KEY!);
+  }
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)}/workers/scripts/${encodeURIComponent(env.WORKER_NAME)}${suffix}`,
     { ...init, headers },
