@@ -96,7 +96,9 @@ export async function upsertApiUnitSource(
   const files = source.files
     .filter((current) => current.path !== path)
     .concat(file)
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort((left, right) =>
+      left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+    );
   const revision = await digest(
     JSON.stringify(files.map((current) => [current.path, current.sha256])),
   );

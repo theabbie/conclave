@@ -29,4 +29,22 @@ describe("browser release source", () => {
     expect(apiUnitsFromSource(updated)[0].name).toBe("Hello v2");
     expect(updated.revision).not.toBe(added.revision);
   });
+
+  it("keeps source paths in the server's deterministic code-point order", async () => {
+    const paths = [
+      "README.md",
+      "public/favicon.svg",
+      "src/App.tsx",
+      "src/agent/transport.ts",
+    ];
+    const source = {
+      schema: 1 as const,
+      revision: "old",
+      files: paths.map((path) => ({ path, content: "", sha256: "hash" })),
+    };
+    const added = await upsertApiUnitSource(source, unit, "add");
+    expect(added.files.map((file) => file.path)).toEqual(
+      [...paths, "server/api-units/hello.json"].sort(),
+    );
+  });
 });
